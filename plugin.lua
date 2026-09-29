@@ -24,10 +24,49 @@ local function version_of(context)
   return version
 end
 
+local DEFAULT_SOURCE_ROOT = "src/main/java"
+
+local function class_to_path(name)
+  if type(name) ~= "string" then
+    error('every entry in "roots" must be a class name string, not a '
+          .. type(name), 0)
+  end
+  local path = nil
+  local remaining = name
+  while true do
+    local segment, rest = string.match(remaining, "^([^.]*)%.(.*)$")
+    if segment == nil then segment, rest = remaining, nil end
+    if string.match(segment, "^[%a_$][%w_$]*$") == nil then
+      error(string.format('"%s" is not a java class name: the segment "%s" is not an identifier',
+                          name, segment), 0)
+    end
+    path = path == nil and segment or (path .. "/" .. segment)
+    if rest == nil then break end
+    remaining = rest
+  end
+  return path .. ".java"
+end
+
+local function source_paths(config, project_root)
+  local roots, main = roots_of(config)
+  local source_root = config.sourceRoot or DEFAULT_SOURCE_ROOT
+  local names = {}
+  if roots ~= nil then
+    for index = 1, #roots do names[#names + 1] = roots[index] end
+  end
+  if main ~= nil then names[#names + 1] = main end
+
+  local paths = {}
+  for index = 1, #names do
+    paths[index] = project_root .. "/" .. source_root .. "/" .. class_to_path(names[index])
+  end
+  return paths, source_root
+end
+
 daukle.toolchain{
   name = "java",
   generate = function(context)
-    roots_of(context.config)
+    source_paths(context.config, context.root)
     jdks.for_host{ os = context.host.os, arch = context.host.arch,
                    version = version_of(context) }
     return {}
