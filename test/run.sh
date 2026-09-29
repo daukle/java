@@ -62,6 +62,10 @@ run_case() {
         continue
       fi
       clause=$(cat "$case_dir/expect-error.txt")
+      if [ -z "$clause" ]; then
+        fail "$name/$manifest_name" "the expected-clause file is empty, so this case asserts nothing"
+        continue
+      fi
       if ! grep -qF "$clause" "$sandbox/stderr.txt" "$sandbox/stdout.txt"; then
         fail "$name/$manifest_name" "message does not carry: $clause"
         continue
@@ -90,6 +94,10 @@ run_case() {
           continue
         fi
         clause=$(cat "$case_dir/expect-task-error.txt")
+        if [ -z "$clause" ]; then
+          fail "$name/$manifest_name" "the expected-clause file is empty, so this case asserts nothing"
+          continue
+        fi
         if ! grep -qF "$clause" "$sandbox/stderr.txt" "$sandbox/stdout.txt"; then
           fail "$name/$manifest_name" "message does not carry: $clause"
           continue

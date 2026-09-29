@@ -100,6 +100,8 @@ daukle.toolchain{
     source_paths(config, context.root)
     release_of(config)
     checked_args(config.compileArgs, "compileArgs")
+    checked_args(config.runArgs, "runArgs")
+    checked_args(config.jarArgs, "jarArgs")
     jdks.for_host{ os = context.host.os, arch = context.host.arch,
                    version = version_of(context) }
     return {}
@@ -123,7 +125,10 @@ end
 
 local function artifact_name(project)
   local last = string.match(project, "([^/]+)$")
-  return (last or project) .. ".jar"
+  if last == nil then
+    error('the project id "' .. project .. '" has no final segment to name a jar from', 0)
+  end
+  return last .. ".jar"
 end
 
 local function main_of(config)
