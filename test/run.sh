@@ -52,7 +52,8 @@ run_case() {
     mkdir -p "$(dirname "$sandbox")"
     cp -R "$case_dir" "$sandbox"
     rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" \
-           "$sandbox/task.txt" "$sandbox/produces.txt"
+           "$sandbox/task.txt" "$sandbox/produces.txt" \
+           "$sandbox/expect-task-error.txt"
     stage_plugin "$sandbox"
 
     if [ -f "$case_dir/expect-error.txt" ]; then
@@ -83,6 +84,19 @@ run_case() {
         continue
       fi
       task=$(cat "$case_dir/task.txt")
+      if [ -f "$case_dir/expect-task-error.txt" ]; then
+        if (cd "$sandbox" && "$daukle" "$task" >stdout.txt 2>stderr.txt); then
+          fail "$name/$manifest_name" "expected task $task to fail, got success"
+          continue
+        fi
+        clause=$(cat "$case_dir/expect-task-error.txt")
+        if ! grep -qF "$clause" "$sandbox/stderr.txt" "$sandbox/stdout.txt"; then
+          fail "$name/$manifest_name" "message does not carry: $clause"
+          continue
+        fi
+        passed=$((passed + 1))
+        continue
+      fi
       if ! (cd "$sandbox" && "$daukle" "$task" >stdout.txt 2>stderr.txt); then
         fail "$name/$manifest_name" "task $task failed"
         sed -n '1,40p' "$sandbox/stderr.txt" >&2

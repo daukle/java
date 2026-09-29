@@ -1,0 +1,2 @@
+build/daukle/java/classes/com/example/Main.class
+build/daukle/java/app.jar

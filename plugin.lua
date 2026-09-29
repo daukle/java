@@ -122,6 +122,21 @@ local function executable(host_os, pick, name)
   return pick.home .. "/bin/" .. name .. suffix
 end
 
+local function artifact_name(project)
+  local last = string.match(project, "([^/]+)$")
+  return (last or project) .. ".jar"
+end
+
+local function main_of(config)
+  local main = config.main
+  if main == nil then
+    error('a java toolchain needs "main": a jar\'s entry point cannot be inferred'
+          .. ' from "roots", and neither can a run target', 0)
+  end
+  class_to_path(main)
+  return main
+end
+
 daukle.task{
   name = "java:compile",
   run = function(context)
@@ -139,5 +154,32 @@ daukle.task{
     for index = 1, #paths do argv[#argv + 1] = paths[index] end
 
     daukle.exec(root:tool(executable(context.host.os, pick, "javac")), argv)
+  end,
+}
+
+daukle.task{
+  name = "java:run",
+  dependsOn = { "java:compile" },
+  run = function(context)
+    local root, pick = provision_jdk(context)
+    local config = config_of(context)
+    local argv = append_args({ "-cp", "classes", main_of(config) }, config.runArgs, "runArgs")
+    daukle.exec(root:tool(executable(context.host.os, pick, "java")), argv)
+  end,
+}
+
+daukle.task{
+  name = "java:jar",
+  dependsOn = { "java:compile" },
+  run = function(context)
+    local root, pick = provision_jdk(context)
+    local config = config_of(context)
+    local argv = append_args({
+      "--create",
+      "--file", artifact_name(context.project),
+      "--main-class", main_of(config),
+      "-C", "classes", ".",
+    }, config.jarArgs, "jarArgs")
+    daukle.exec(root:tool(executable(context.host.os, pick, "jar")), argv)
   end,
 }
