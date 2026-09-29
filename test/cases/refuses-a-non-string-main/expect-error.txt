@@ -1,0 +1,1 @@
+"main" must name a class as a string, not a

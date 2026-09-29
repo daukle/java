@@ -30,10 +30,9 @@ end
 
 local DEFAULT_SOURCE_ROOT = "src/main/java"
 
-local function class_to_path(name)
+local function class_to_path(name, key)
   if type(name) ~= "string" then
-    error('every entry in "roots" must be a class name string, not a '
-          .. type(name), 0)
+    error('"' .. key .. '" must name a class as a string, not a ' .. type(name), 0)
   end
   local path = nil
   local remaining = name
@@ -57,15 +56,15 @@ local function source_paths(config, project_root)
   if type(source_root) ~= "string" then
     error('"sourceRoot" must be a path string, not a ' .. type(source_root), 0)
   end
-  local names = {}
-  if roots ~= nil then
-    for index = 1, #roots do names[#names + 1] = roots[index] end
-  end
-  if main ~= nil then names[#names + 1] = main end
-
+  local prefix = project_root .. "/" .. source_root .. "/"
   local paths = {}
-  for index = 1, #names do
-    paths[index] = project_root .. "/" .. source_root .. "/" .. class_to_path(names[index])
+  if roots ~= nil then
+    for index = 1, #roots do
+      paths[#paths + 1] = prefix .. class_to_path(roots[index], "roots")
+    end
+  end
+  if main ~= nil then
+    paths[#paths + 1] = prefix .. class_to_path(main, "main")
   end
   return paths, source_root
 end
@@ -133,7 +132,7 @@ local function main_of(config)
     error('a java toolchain needs "main": a jar\'s entry point cannot be inferred'
           .. ' from "roots", and neither can a run target', 0)
   end
-  class_to_path(main)
+  class_to_path(main, "main")
   return main
 end
 

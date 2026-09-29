@@ -1,1 +1,1 @@
-every entry in "roots" must be a class name string
+"roots" must name a class as a string, not a
