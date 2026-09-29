@@ -88,6 +88,10 @@ run_case() {
         continue
       fi
       task=$(cat "$case_dir/task.txt")
+      if [ -f "$case_dir/expect-task-error.txt" ] && [ -f "$case_dir/produces.txt" ]; then
+        fail "$name/$manifest_name" "a case carries both expect-task-error.txt and produces.txt; they are mutually exclusive"
+        continue
+      fi
       if [ -f "$case_dir/expect-task-error.txt" ]; then
         if (cd "$sandbox" && "$daukle" "$task" >stdout.txt 2>stderr.txt); then
           fail "$name/$manifest_name" "expected task $task to fail, got success"

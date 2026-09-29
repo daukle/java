@@ -6,8 +6,8 @@ uncompressed tar of both files, and acquired by a `[plugins]` entry naming `dauk
 ## What this plugin owns
 
 A `java` toolchain that compiles, runs and packages a JVM project with a JDK it provisions itself.
-It generates no file anywhere. Everything it causes to exist is written by `javac` or `jar` into
-`build/daukle/java/`.
+It generates no file anywhere. Everything it writes into the project is written by `javac` or `jar`
+into `build/daukle/java/`.
 
 It also exports `lib/jdks`, which is the table of pinned Temurin archives. `gradle` and `maven`
 reach it with `daukle.require("java:lib/jdks")` to learn which JDK a host needs; they provision it
@@ -43,8 +43,9 @@ open risk, not this plugin's, and it is named here because this is where a user 
 `test/run.sh` runs every directory under `test/cases/` against a real daukle.
 
 - a case with `expect-error.txt` must fail `daukle sync` with a message carrying that clause
-- a case with `task.txt` runs `daukle <task>`; with `produces.txt` every listed path must exist and
-  be non-empty afterwards, and with `expect-task-error.txt` the task must fail carrying that clause
+- a case with `task.txt` runs `daukle <task>`. It carries exactly one of `produces.txt`, requiring
+  every listed path to exist and be non-empty afterwards, or `expect-task-error.txt`, requiring the
+  task to fail carrying that clause; the two are mutually exclusive and a case carrying both fails
 - a case with `expected/` must sync cleanly and match every file byte for byte, and is synced twice
 - a case whose `expected/` or `produces.txt` lists nothing is a failure, not a pass
 
@@ -81,13 +82,14 @@ somewhere else would still pass every case.
 applying once, and task cases get no equivalent, so a task that is not idempotent would not be
 caught here.
 
-**`for_host`'s missing-digest branch is unreachable by any test.** The guard refuses a version that
-has a release entry but no digest for the host, which is exactly one combination: java 17 on
-windows/aarch64, the one build Temurin does not publish. `for_host` receives the real host and the
-host is not injectable through a manifest, so no case can reach it on any other machine. The guard is
-kept regardless: without it, a windows/aarch64 user asking for java 17 would be handed
-`sha256 = nil` and refused by daukle with a message about a missing digest rather than one naming
-their host and version.
+**`for_host`'s missing-digest branch is unreachable by any test.** The guard refuses any host and
+version combination the table does not hold, which includes every architecture daukle reports as
+`x86` and every unusual platform it reports as `linux`, on both java versions this plugin pins. Of
+the combinations this plugin means to support, windows/aarch64 on java 17 is the only one Temurin
+simply does not build. `for_host` receives the real host and the host is not injectable through a
+manifest, so no case can reach the guard on any machine this suite runs on. The guard is kept
+regardless: without it, a host the table does not hold would be handed `sha256 = nil` and refused by
+daukle with a message about a missing digest rather than one naming their host and version.
 
 ## Conventions this repository is held to
 

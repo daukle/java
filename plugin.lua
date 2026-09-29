@@ -5,6 +5,9 @@ local jdks = daukle.require("lib/jdks")
 local function roots_of(config)
   local roots = config.roots
   local main = config.main
+  if roots ~= nil and type(roots) ~= "table" then
+    error('"roots" must be a list of class names, not a ' .. type(roots), 0)
+  end
   if roots == nil and main == nil then
     error('a java toolchain needs "main" or "roots": there is nothing to compile'
           .. ' without at least one root class', 0)
@@ -66,6 +69,9 @@ local function source_paths(config, project_root)
   if main ~= nil then
     paths[#paths + 1] = prefix .. class_to_path(main, "main")
   end
+  if #paths == 0 then
+    error('a java toolchain needs at least one root class, and "roots" is empty', 0)
+  end
   return paths, source_root
 end
 
@@ -87,10 +93,16 @@ local function release_of(config)
   local release = config.release
   if release == nil then return nil end
   local kind = type(release)
-  if kind ~= "string" and kind ~= "number" then
+  if kind == "number" then
+    if release ~= math.floor(release) then
+      error('"release" must be a whole version such as 17, not ' .. tostring(release), 0)
+    end
+    return string.format("%d", release)
+  end
+  if kind ~= "string" then
     error('"release" must be a version such as "17", not a ' .. kind, 0)
   end
-  return tostring(release)
+  return release
 end
 
 daukle.toolchain{
@@ -109,12 +121,13 @@ daukle.toolchain{
 }
 
 local function provision_jdk(context)
+  local version = version_of(context)
   local pick = jdks.for_host{ os = context.host.os, arch = context.host.arch,
-                              version = version_of(context) }
+                              version = version }
   return daukle.provision{
     url = pick.url,
     sha256 = pick.sha256,
-    as = "temurin " .. version_of(context),
+    as = "temurin " .. version,
   }, pick
 end
 
@@ -167,7 +180,8 @@ daukle.task{
   run = function(context)
     local root, pick = provision_jdk(context)
     local config = config_of(context)
-    local argv = append_args({ "-cp", "classes", main_of(config) }, config.runArgs, "runArgs")
+    local argv = append_args({ "-cp", "classes" }, config.runArgs, "runArgs")
+    argv[#argv + 1] = main_of(config)
     daukle.exec(root:tool(executable(context.host.os, pick, "java")), argv)
   end,
 }
@@ -178,12 +192,11 @@ daukle.task{
   run = function(context)
     local root, pick = provision_jdk(context)
     local config = config_of(context)
-    local argv = append_args({
-      "--create",
-      "--file", artifact_name(context.project),
-      "--main-class", main_of(config),
-      "-C", "classes", ".",
-    }, config.jarArgs, "jarArgs")
+    local argv = append_args({ "--create", "--file", artifact_name(context.project),
+                               "--main-class", main_of(config) }, config.jarArgs, "jarArgs")
+    argv[#argv + 1] = "-C"
+    argv[#argv + 1] = "classes"
+    argv[#argv + 1] = "."
     daukle.exec(root:tool(executable(context.host.os, pick, "jar")), argv)
   end,
 }

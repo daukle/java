@@ -1,0 +1,12 @@
+schema = 1
+project = "example/app"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+java = "./plugins/java"
+
+[toolchains.java]
+version = "21"
+roots = "com.example.Api"
