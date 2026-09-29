@@ -24,6 +24,7 @@ fi
 
 passed=0
 failed=0
+skipped=0
 
 fail() {
   echo "FAIL $1: $2" >&2
@@ -78,6 +79,7 @@ run_case() {
       # cache keeps later runs free; elsewhere it is opt-in.
       if [ "$(uname -s)" != "Linux" ] && [ "${DAUKLE_JAVA_E2E:-}" != "1" ]; then
         echo "skip $name/$manifest_name: set DAUKLE_JAVA_E2E=1 to run it here" >&2
+        skipped=$((skipped + 1))
         continue
       fi
       task=$(cat "$case_dir/task.txt")
@@ -91,7 +93,7 @@ run_case() {
         continue
       fi
       produced_ok=0
-      while IFS= read -r produced; do
+      while IFS= read -r produced || [ -n "$produced" ]; do
         [ -z "$produced" ] && continue
         if [ ! -s "$sandbox/$produced" ]; then
           fail "$name/$manifest_name" "$produced is missing or empty"
@@ -148,5 +150,5 @@ for case_dir in "$root"/test/cases/*/; do
   run_case "${case_dir%/}"
 done
 
-echo "$passed passed, $failed failed"
+echo "$passed passed, $failed failed, $skipped skipped"
 [ "$failed" -eq 0 ]

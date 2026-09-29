@@ -70,10 +70,37 @@ local function source_paths(config, project_root)
   return paths, source_root
 end
 
+local function checked_args(extra, key)
+  if extra ~= nil and type(extra) ~= "table" then
+    error('"' .. key .. '" must be a list of arguments, not a ' .. type(extra), 0)
+  end
+  return extra
+end
+
+local function append_args(argv, extra, key)
+  checked_args(extra, key)
+  if extra == nil then return argv end
+  for index = 1, #extra do argv[#argv + 1] = extra[index] end
+  return argv
+end
+
+local function release_of(config)
+  local release = config.release
+  if release == nil then return nil end
+  local kind = type(release)
+  if kind ~= "string" and kind ~= "number" then
+    error('"release" must be a version such as "17", not a ' .. kind, 0)
+  end
+  return tostring(release)
+end
+
 daukle.toolchain{
   name = "java",
   generate = function(context)
-    source_paths(config_of(context), context.root)
+    local config = config_of(context)
+    source_paths(config, context.root)
+    release_of(config)
+    checked_args(config.compileArgs, "compileArgs")
     jdks.for_host{ os = context.host.os, arch = context.host.arch,
                    version = version_of(context) }
     return {}
@@ -103,15 +130,12 @@ daukle.task{
     local root, pick = provision_jdk(context)
 
     local argv = { "-d", "classes", "-sourcepath", context.root .. "/" .. source_root }
-    local release = config.release
+    local release = release_of(config)
     if release ~= nil then
       argv[#argv + 1] = "--release"
-      argv[#argv + 1] = tostring(release)
+      argv[#argv + 1] = release
     end
-    local extra = config.args
-    if extra ~= nil then
-      for index = 1, #extra do argv[#argv + 1] = extra[index] end
-    end
+    append_args(argv, config.compileArgs, "compileArgs")
     for index = 1, #paths do argv[#argv + 1] = paths[index] end
 
     daukle.exec(root:tool(executable(context.host.os, pick, "javac")), argv)
