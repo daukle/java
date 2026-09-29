@@ -50,6 +50,9 @@ end
 local function source_paths(config, project_root)
   local roots, main = roots_of(config)
   local source_root = config.sourceRoot or DEFAULT_SOURCE_ROOT
+  if type(source_root) ~= "string" then
+    error('"sourceRoot" must be a path string, not a ' .. type(source_root), 0)
+  end
   local names = {}
   if roots ~= nil then
     for index = 1, #roots do names[#names + 1] = roots[index] end
