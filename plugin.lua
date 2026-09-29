@@ -12,8 +12,12 @@ local function roots_of(config)
   return roots, main
 end
 
+local function config_of(context)
+  return context.toolchain ~= nil and context.toolchain.config or context.config
+end
+
 local function version_of(context)
-  local version = context.toolchain ~= nil and context.toolchain.version or context.config.version
+  local version = (context.toolchain ~= nil and context.toolchain.version) or config_of(context).version
   if version == nil then
     error('a java toolchain needs a "version": which JDK to provision is not inferred', 0)
   end
@@ -69,7 +73,7 @@ end
 daukle.toolchain{
   name = "java",
   generate = function(context)
-    source_paths(context.config, context.root)
+    source_paths(config_of(context), context.root)
     jdks.for_host{ os = context.host.os, arch = context.host.arch,
                    version = version_of(context) }
     return {}
@@ -94,16 +98,17 @@ end
 daukle.task{
   name = "java:compile",
   run = function(context)
-    local paths, source_root = source_paths(context.toolchain.config, context.root)
+    local config = config_of(context)
+    local paths, source_root = source_paths(config, context.root)
     local root, pick = provision_jdk(context)
 
     local argv = { "-d", "classes", "-sourcepath", context.root .. "/" .. source_root }
-    local release = context.toolchain.config.release
+    local release = config.release
     if release ~= nil then
       argv[#argv + 1] = "--release"
       argv[#argv + 1] = tostring(release)
     end
-    local extra = context.toolchain.config.args
+    local extra = config.args
     if extra ~= nil then
       for index = 1, #extra do argv[#argv + 1] = extra[index] end
     end
