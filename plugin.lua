@@ -75,3 +75,40 @@ daukle.toolchain{
     return {}
   end,
 }
+
+local function provision_jdk(context)
+  local pick = jdks.for_host{ os = context.host.os, arch = context.host.arch,
+                              version = version_of(context) }
+  return daukle.provision{
+    url = pick.url,
+    sha256 = pick.sha256,
+    as = "temurin " .. version_of(context),
+  }, pick
+end
+
+local function executable(host_os, pick, name)
+  local suffix = host_os == "windows" and ".exe" or ""
+  return pick.home .. "/bin/" .. name .. suffix
+end
+
+daukle.task{
+  name = "java:compile",
+  run = function(context)
+    local paths, source_root = source_paths(context.toolchain.config, context.root)
+    local root, pick = provision_jdk(context)
+
+    local argv = { "-d", "classes", "-sourcepath", context.root .. "/" .. source_root }
+    local release = context.toolchain.config.release
+    if release ~= nil then
+      argv[#argv + 1] = "--release"
+      argv[#argv + 1] = tostring(release)
+    end
+    local extra = context.toolchain.config.args
+    if extra ~= nil then
+      for index = 1, #extra do argv[#argv + 1] = extra[index] end
+    end
+    for index = 1, #paths do argv[#argv + 1] = paths[index] end
+
+    daukle.exec(root:tool(executable(context.host.os, pick, "javac")), argv)
+  end,
+}

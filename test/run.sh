@@ -50,7 +50,8 @@ run_case() {
     rm -rf "$sandbox"
     mkdir -p "$(dirname "$sandbox")"
     cp -R "$case_dir" "$sandbox"
-    rm -rf "$sandbox/expected" "$sandbox/expect-error.txt"
+    rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" \
+           "$sandbox/task.txt" "$sandbox/produces.txt"
     stage_plugin "$sandbox"
 
     if [ -f "$case_dir/expect-error.txt" ]; then
@@ -64,6 +65,40 @@ run_case() {
         continue
       fi
       passed=$((passed + 1))
+      continue
+    fi
+
+    if [ -f "$case_dir/task.txt" ]; then
+      if [ "$manifest_name" != "daukle.toml" ]; then
+        fail "$name/$manifest_name" "a task case's manifest must be daukle.toml"
+        continue
+      fi
+      # A task provisions a real JDK, which is a large download. It runs by
+      # default only on Linux, where one CI job pays for it and the toolchain
+      # cache keeps later runs free; elsewhere it is opt-in.
+      if [ "$(uname -s)" != "Linux" ] && [ "${DAUKLE_JAVA_E2E:-}" != "1" ]; then
+        echo "skip $name/$manifest_name: set DAUKLE_JAVA_E2E=1 to run it here" >&2
+        continue
+      fi
+      task=$(cat "$case_dir/task.txt")
+      if ! (cd "$sandbox" && "$daukle" "$task" >stdout.txt 2>stderr.txt); then
+        fail "$name/$manifest_name" "task $task failed"
+        sed -n '1,40p' "$sandbox/stderr.txt" >&2
+        continue
+      fi
+      if ! grep -q . "$case_dir/produces.txt"; then
+        fail "$name/$manifest_name" "produces.txt lists nothing, so this case asserts nothing"
+        continue
+      fi
+      produced_ok=0
+      while IFS= read -r produced; do
+        [ -z "$produced" ] && continue
+        if [ ! -s "$sandbox/$produced" ]; then
+          fail "$name/$manifest_name" "$produced is missing or empty"
+          produced_ok=1
+        fi
+      done < "$case_dir/produces.txt"
+      [ "$produced_ok" -eq 0 ] && passed=$((passed + 1))
       continue
     fi
 
