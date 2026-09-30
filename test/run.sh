@@ -79,9 +79,10 @@ run_case() {
         fail "$name/$manifest_name" "a task case's manifest must be daukle.toml"
         continue
       fi
-      # A task provisions a real JDK, which is a large download. It runs by
-      # default only on Linux, where one CI job pays for it and the toolchain
-      # cache keeps later runs free; elsewhere it is opt-in.
+      # A task provisions a real JDK, which is a large download, so a bare
+      # local run on a developer's machine does not pay for it unasked. CI sets
+      # DAUKLE_JAVA_E2E on every runner, because the per-platform JDK archives
+      # are exercised by nothing else.
       if [ "$(uname -s)" != "Linux" ] && [ "${DAUKLE_JAVA_E2E:-}" != "1" ]; then
         echo "skip $name/$manifest_name: set DAUKLE_JAVA_E2E=1 to run it here" >&2
         skipped=$((skipped + 1))
