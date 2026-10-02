@@ -15,10 +15,17 @@ themselves, under their own capability.
 
 ## What it does not own
 
-External dependencies on a classpath. `daukle.provision` unpacks an archive and does not keep it,
-and a classpath entry is the archive, so there is no mechanism that fits. A project under this
-toolchain compiles against the JDK and its own sources. Coordinates are what `gradle` and `maven`
-are for.
+External dependencies on a classpath, for now. A project under this toolchain compiles against the
+JDK and its own sources, and coordinates are what `gradle` and `maven` are for.
+
+**The reason this page used to give was wrong and is worth correcting rather than deleting.** It
+said `daukle.provision` "unpacks an archive and does not keep it, and a classpath entry is the
+archive, so there is no mechanism that fits". Provision does keep the unpacked tree, content
+addressed, and `root:path` has named a file inside one since 2026-09-30. A classpath was built that
+way end to end with no change to daukle. The real obstacle is that **an exploded jar is not a jar**:
+a multi-release dependency silently serves its base classes from a directory and its versioned
+classes from a file, so unpacking changes what the artifact means. `2026-10-02-java-classpath-design.md`
+specifies the fix, which is a verb that verifies a file and does not unpack it.
 
 Tests, annotation processors, the module path, javadoc and signing. The design spec's section 3
 lists them with the reason.
