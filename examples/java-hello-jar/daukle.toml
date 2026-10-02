@@ -1,0 +1,12 @@
+schema = 1
+project = "daukle/example-java-hello-jar"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+java = "./plugins/java"
+
+[toolchains.java]
+version = "21"
+main = "com.example.Main"

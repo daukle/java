@@ -53,7 +53,7 @@ run_case() {
     cp -R "$case_dir" "$sandbox"
     rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" \
            "$sandbox/task.txt" "$sandbox/produces.txt" \
-           "$sandbox/expect-task-error.txt"
+           "$sandbox/expect-task-error.txt" "$sandbox/expect-output.txt"
     stage_plugin "$sandbox"
 
     if [ -f "$case_dir/expect-error.txt" ]; then
@@ -115,6 +115,21 @@ run_case() {
         sed -n '1,40p' "$sandbox/stderr.txt" >&2
         continue
       fi
+      # An example asserts on what the task PRINTED, which is what a reader
+      # of the example came for. A test case asserts on the files produced.
+      if [ -f "$case_dir/expect-output.txt" ]; then
+        clause=$(cat "$case_dir/expect-output.txt")
+        if [ -z "$clause" ]; then
+          fail "$name/$manifest_name" "the expected-clause file is empty, so this case asserts nothing"
+          continue
+        fi
+        if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+          fail "$name/$manifest_name" "task $task printed no \"$clause\""
+          continue
+        fi
+        passed=$((passed + 1))
+        continue
+      fi
       if ! grep -q . "$case_dir/produces.txt"; then
         fail "$name/$manifest_name" "produces.txt lists nothing, so this case asserts nothing"
         continue
@@ -173,7 +188,10 @@ compare_expected() {
 }
 
 rm -rf "$work"
-for case_dir in "$root"/test/cases/*/; do
+# examples/ runs under the same harness as test/cases/, so an example that
+# stops working is a red suite rather than something noticed later.
+for case_dir in "$root"/test/cases/*/ "$root"/examples/*/; do
+  [ -d "$case_dir" ] || continue
   run_case "${case_dir%/}"
 done
 
