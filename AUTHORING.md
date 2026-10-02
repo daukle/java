@@ -119,6 +119,15 @@ the machine that first uses it.
 passes, not a boundary it enforces against the manifest. It is the user's own manifest, so this is a
 sharp edge rather than a hole, and it is named here rather than left for someone to discover.
 
+**`jarArgs` and `runArgs` have the same edge, and `runArgs` is now the expensive one.** Measured
+with the JDK rather than reasoned: `jar --create --file first.jar --file second.jar` writes
+`second.jar`, so the last `--file` wins exactly as the last `-d` does, and a `jarArgs` naming one
+decides where the artifact lands. `java` honours the last `-cp` the same way, so
+`runArgs = ["-cp", "classes"]` silently replaces the classpath this plugin built and **every
+declared dependency disappears from the run**, with no error: the first class that resolved only
+through a dependency fails at the point it is loaded, which may be nowhere near the start. Add to a
+classpath by declaring another `[[toolchains.java.classpath]]` entry, never by passing `-cp`.
+
 **Nothing asserts the absence of output outside the derived directory.** The task cases assert that
 the expected files exist and are non-empty. A `javac` invocation that wrote to the right place AND
 somewhere else would still pass every case.
