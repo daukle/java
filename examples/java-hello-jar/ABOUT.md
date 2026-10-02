@@ -41,11 +41,16 @@ implementation in Lua.
 
 ## What this example cannot show
 
-**A classpath.** This toolchain compiles against the JDK and your own sources, and has no mechanism
-for an external dependency: `daukle.provision` unpacks an archive and does not keep it, and a
-classpath entry is the archive. Coordinates for Java libraries are what `daukle/gradle` and a future
-`maven` plugin are for, and neither replaces its tool. If your project needs one jar from Maven
-Central, this is not yet the toolchain for it.
+**A classpath**, which this example does not use although the toolchain has one. `classpath` and
+`testClasspath` take pinned entries, each a url and a sha256, and `1.1.0` compiles and runs against
+them. What is still missing is **resolution**: a coordinate like `com.example:thing:1.2` is not
+turned into a url, a digest and a transitive closure by anything here, so every entry is written out
+by hand. Coordinates for Java libraries are what `daukle/gradle` and a future `maven` plugin are
+for, and neither replaces its tool.
+
+This paragraph said the opposite until 2026-10-02, on the grounds that `daukle.provision` does not
+keep an archive and a classpath entry IS the archive. Both halves were measured false: a jar has to
+stay the file it was published as, which is what `daukle.artifact` now does.
 
 **A class reached only reflectively or through `ServiceLoader`** is not compiled unless you name it
 in `roots`. `javac -sourcepath` compiles what is reachable from the roots it is given.
