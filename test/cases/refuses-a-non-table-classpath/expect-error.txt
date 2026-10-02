@@ -1,0 +1,1 @@
+"classpath" must be a list of pinned artifacts

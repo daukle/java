@@ -1,0 +1,17 @@
+schema = 1
+project = "example/app"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+java = "./plugins/java"
+
+[toolchains.java]
+version = "21"
+main = "com.example.Main"
+
+[[toolchains.java.classpath]]
+url = "https://example.invalid/a.jar"
+sha256 = "3333333333333333333333333333333333333333333333333333333333333333"
+version = "2"

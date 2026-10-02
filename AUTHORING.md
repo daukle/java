@@ -15,20 +15,58 @@ themselves, under their own capability.
 
 ## What it does not own
 
-External dependencies on a classpath, for now. A project under this toolchain compiles against the
-JDK and its own sources, and coordinates are what `gradle` and `maven` are for.
+**Coordinates.** This toolchain takes artifacts that are already pinned by url and sha256; it
+resolves nothing, reads no POM and computes no transitive closure. Turning
+`group:artifact:version` into a set of urls is what `gradle` and `maven` are for.
 
-**The reason this page used to give was wrong and is worth correcting rather than deleting.** It
-said `daukle.provision` "unpacks an archive and does not keep it, and a classpath entry is the
-archive, so there is no mechanism that fits". Provision does keep the unpacked tree, content
-addressed, and `root:path` has named a file inside one since 2026-09-30. A classpath was built that
-way end to end with no change to daukle. The real obstacle is that **an exploded jar is not a jar**:
-a multi-release dependency silently serves its base classes from a directory and its versioned
-classes from a file, so unpacking changes what the artifact means. `2026-10-02-java-classpath-design.md`
-specifies the fix, which is a verb that verifies a file and does not unpack it.
+**A fat jar, and `mergeServiceFiles`.** `java:jar` packages this project's own classes and bundles
+no dependency. Merging several jars correctly needs the resource-merge rules a shaded build has, and
+a half-done version produces a jar that runs until a `ServiceLoader` lookup returns the wrong
+implementation.
 
 Tests, annotation processors, the module path, javadoc and signing. The design spec's section 3
 lists them with the reason.
+
+## The classpath
+
+A dependency is declared as a pinned artifact, and repeated for as many as the project has:
+
+```toml
+[[toolchains.java.classpath]]
+url = "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.13/slf4j-api-2.0.13.jar"
+sha256 = "..."
+as = "slf4j-api 2.0.13"
+```
+
+`url` and `sha256` are both required: a classpath entry is pinned like every other acquisition and
+there is no unpinned form. `as` is an optional label for the acquisition report. Entries reach
+`java:compile` and `java:run` in **declaration order**, which is preserved because classpath order
+decides which of two copies of a class wins. `testClasspath` takes the same fields and reaches
+`java:compile` only.
+
+**The jar is kept as a jar and never unpacked**, and that is the whole point rather than an
+implementation detail. An exploded jar is not a jar: a multi-release dependency serves its
+versioned classes as a file on the classpath and its **base** classes as the same content in a
+directory, with no error and no warning, and signed jars and sealed packages lose their meaning the
+same way. Measured both ways; see `2026-10-02-java-classpath-design.md`.
+
+**An entry with `path` is a distribution archive rather than a single jar.** It is provisioned and
+unpacked, and `path` names the directory inside it that belongs on the classpath:
+
+```toml
+[[toolchains.java.classpath]]
+url = "https://example.invalid/some-distribution.tar.gz"
+sha256 = "..."
+path = "lib"
+```
+
+The JVM expands its own `lib/*` wildcard, so a directory of jars needs no enumeration. Use this form
+only for an archive that really is a distribution: a single jar given a `path` would be unpacked,
+which is what the paragraph above warns about.
+
+**A producer can hand its artifact over instead**, in its own module block for this toolchain, with
+the same `url` and `sha256` fields. That is the same shape `daukle/c` receives and writes into a
+`FetchContent` block; here the two fields are fetched rather than delegated.
 
 ## Limits a user will meet
 
