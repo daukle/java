@@ -19,10 +19,18 @@ local function config_of(context)
   return context.toolchain ~= nil and context.toolchain.config or context.config
 end
 
+--[[ A default is only compatible with this project's reproducibility stance
+     because it is pinned HERE and moves only with a release of this plugin: a
+     given plugin version always provisions the same JDK, so two machines
+     holding one daukle.toml and one plugin pin cannot disagree. It is not read
+     from the host and never follows "whatever is newest". Changing it is a
+     breaking change for every project that left the version out. D-46. ]]
+local DEFAULT_VERSION = "21"
+
 local function version_of(context)
   local version = (context.toolchain ~= nil and context.toolchain.version) or config_of(context).version
   if version == nil then
-    error('a java toolchain needs a "version": which JDK to provision is not inferred', 0)
+    return DEFAULT_VERSION
   end
   if string.match(version, "^%d+$") == nil then
     error('a java toolchain version must be an exact major version such as "21", not a range:'

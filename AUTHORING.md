@@ -80,6 +80,14 @@ does not, because Lua's `%a` is ASCII-only under the sandbox's locale.
 **`version` must be an exact major version.** `>=17` is refused. This plugin pins its JDKs and does
 not match ranges, because doing so would mean a semver implementation in Lua.
 
+**`version` may be left out, and then it is 21.** The default is pinned in this plugin and moves
+only with a release of it, which is what makes having one compatible with daukle's reproducibility
+stance at all: a given plugin version always provisions the same JDK, so two machines holding one
+`daukle.toml` and one plugin pin cannot disagree. It is never read from the host and never follows
+whatever is newest. **Raising it is a breaking change** for every project that left the version out,
+so it moves with a major release and not with a patch. The acquisition report always names the
+version that was actually provisioned, so a project on the default can still see which JDK it got.
+
 **The first build downloads roughly 331 MB and reports no progress while it does.** That is daukle's
 open risk, not this plugin's, and it is named here because this is where a user meets it.
 
