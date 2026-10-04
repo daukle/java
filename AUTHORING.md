@@ -216,8 +216,9 @@ somewhere else would still pass every case.
 applying once, and task cases get no equivalent, so a task that is not idempotent would not be
 caught here.
 
-**`testArgs` is validated and never exercised.** A case proves a non-list is refused; none passes a
-real launcher argument, so a mistake in how `testArgs` is appended would not be caught here.
+**`testArgs` reaches the launcher and a case proves it.** `passes-test-args-to-the-launcher` passes
+`--details=tree` and asserts the per-test name appears, which the summary default does not print.
+Dropping the `append_args` call reddens exactly that case.
 
 **No case runs a JUnit 4 test.** The pinned launcher carries the vintage engine, so a JUnit 4 test
 on the classpath is discovered, but nothing here asserts it and the plugin promises nothing about
