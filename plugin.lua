@@ -39,13 +39,30 @@ end
 
 local DEFAULT_SOURCE_ROOT = "src/main/java"
 local DEFAULT_TEST_SOURCE_ROOT = "src/test/java"
+local DEFAULT_RESOURCE_ROOT = "src/main/resources"
+local DEFAULT_TEST_RESOURCE_ROOT = "src/test/resources"
+
+local function path_key_of(config, key, fallback)
+  local value = config[key] or fallback
+  if type(value) ~= "string" then
+    error('"' .. key .. '" must be a path string, not a ' .. type(value), 0)
+  end
+  return value
+end
 
 local function test_source_root_of(config)
-  local source_root = config.testSourceRoot or DEFAULT_TEST_SOURCE_ROOT
-  if type(source_root) ~= "string" then
-    error('"testSourceRoot" must be a path string, not a ' .. type(source_root), 0)
-  end
-  return source_root
+  return path_key_of(config, "testSourceRoot", DEFAULT_TEST_SOURCE_ROOT)
+end
+
+--[[ A resource root is OPTIONAL in a way a source root is not: a project with
+     no sources is a mistake and a project with no resources is the common
+     case, so an absent directory here is silence rather than an error. D-81. ]]
+local function resource_root_of(config)
+  return path_key_of(config, "resourceRoot", DEFAULT_RESOURCE_ROOT)
+end
+
+local function test_resource_root_of(config)
+  return path_key_of(config, "testResourceRoot", DEFAULT_TEST_RESOURCE_ROOT)
 end
 
 local function class_to_path(name, key)
@@ -240,6 +257,8 @@ daukle.toolchain{
     local config = config_of(context)
     source_paths(config, context.root)
     test_source_root_of(config)
+    resource_root_of(config)
+    test_resource_root_of(config)
     release_of(config)
     checked_args(config.compileArgs, "compileArgs")
     checked_args(config.runArgs, "runArgs")
@@ -309,19 +328,45 @@ local function enumerated_sources(context, root, pick, source_root, archive)
   return paths
 end
 
-local function artifact_name(project)
+local PROBE_ARCHIVE = ".daukle-probe.jar"
+
+--[[ The sandbox has no directory verb, so presence is measured the only way a
+     plugin can: jar refuses a directory that is not there and its exit code is
+     the answer. A missing resource root must be OMITTED rather than passed,
+     because "jar -C nosuchdir ." fails the whole invocation. D-81. ]]
+local function readable_directory(context, root, pick, directory)
+  local jar_tool = root:tool(executable(context.host.os, pick, "jar"))
+  local absolute = context.root .. "/" .. directory
+  local probed = daukle.exec(jar_tool,
+                             { "--create", "--file", PROBE_ARCHIVE, "-C", absolute, "." },
+                             { check = false })
+  if probed.code ~= 0 then return nil end
+  return absolute
+end
+
+local function resource_directories(context, root, pick, config, keys)
+  local found = {}
+  for index = 1, #keys do
+    local directory = readable_directory(context, root, pick, keys[index](config))
+    if directory ~= nil then found[#found + 1] = directory end
+  end
+  return found
+end
+
+local function artifact_name(project, suffix)
   local last = string.match(project, "([^/]+)$")
   if last == nil then
     error('the project id "' .. project .. '" has no final segment to name a jar from', 0)
   end
-  return last .. ".jar"
+  return last .. (suffix or "") .. ".jar"
 end
 
 local function main_of(config)
   local main = config.main
   if main == nil then
-    error('a java toolchain needs "main": a jar\'s entry point cannot be inferred'
-          .. ' from "roots", and neither can a run target', 0)
+    error('a java toolchain needs "main" to run: a run target\'s entry point cannot be inferred'
+          .. ' from "roots". A jar does NOT need one, and omitting it builds a library jar'
+          .. ' with no Main-Class', 0)
   end
   class_to_path(main, "main")
   return main
@@ -369,11 +414,11 @@ daukle.task{
   run = function(context)
     local root, pick = provision_jdk(context)
     local config = config_of(context)
-    local entries = classpath_of(context, config, "classpath")
-    local separator = context.host.os == "windows" and ";" or ":"
-    local run_classpath = CLASSES
-    for index = 1, #entries do run_classpath = run_classpath .. separator .. entries[index] end
-    local argv = append_args({ "-cp", run_classpath }, config.runArgs, "runArgs")
+    local entries = appended({ CLASSES },
+                             resource_directories(context, root, pick, config, { resource_root_of }))
+    appended(entries, classpath_of(context, config, "classpath"))
+    local argv = append_args({ "-cp", classpath_argument(context, entries) },
+                             config.runArgs, "runArgs")
     argv[#argv + 1] = main_of(config)
     daukle.exec(root:tool(executable(context.host.os, pick, "java")), argv)
   end,
@@ -385,11 +430,25 @@ daukle.task{
   run = function(context)
     local root, pick = provision_jdk(context)
     local config = config_of(context)
-    local argv = append_args({ "--create", "--file", artifact_name(context.project),
-                               "--main-class", main_of(config) }, config.jarArgs, "jarArgs")
+    local argv = { "--create", "--file", artifact_name(context.project) }
+    --[[ A library has no entry point, which is D-74's finding one task over:
+         Gradle's jar needs no main class and writes Main-Class only when given
+         one. java:run still requires it, because a run target genuinely needs
+         one. D-81. ]]
+    if config.main ~= nil then
+      argv[#argv + 1] = "--main-class"
+      argv[#argv + 1] = main_of(config)
+    end
+    append_args(argv, config.jarArgs, "jarArgs")
     argv[#argv + 1] = "-C"
     argv[#argv + 1] = CLASSES
     argv[#argv + 1] = "."
+    local resources = resource_directories(context, root, pick, config, { resource_root_of })
+    for index = 1, #resources do
+      argv[#argv + 1] = "-C"
+      argv[#argv + 1] = resources[index]
+      argv[#argv + 1] = "."
+    end
     daukle.exec(root:tool(executable(context.host.os, pick, "jar")), argv)
   end,
 }
@@ -420,7 +479,10 @@ daukle.task{
     --[[ The launcher is last so a project that pins its own junit in
          testClasspath compiles against that one, and a project that pins
          nothing still compiles. ]]
-    local entries = appended({ CLASSES }, test_classpath_entries(context, config))
+    local entries = appended({ CLASSES },
+                             resource_directories(context, root, pick, config,
+                                                  { resource_root_of, test_resource_root_of }))
+    appended(entries, test_classpath_entries(context, config))
     entries[#entries + 1] = launcher_jar()
     argv[#argv + 1] = "-cp"
     argv[#argv + 1] = classpath_argument(context, entries)
@@ -441,7 +503,10 @@ daukle.task{
     local config = config_of(context)
     local source_root = test_source_root_of(config)
     local root, pick = provision_jdk(context)
-    local entries = appended({ TEST_CLASSES, CLASSES }, test_classpath_entries(context, config))
+    local entries = appended({ TEST_CLASSES, CLASSES },
+                             resource_directories(context, root, pick, config,
+                                                  { resource_root_of, test_resource_root_of }))
+    appended(entries, test_classpath_entries(context, config))
 
     --[[ java -jar ignores -cp, so the project classpath goes to the launcher's
          own option rather than to the JVM. ]]
@@ -463,5 +528,35 @@ daukle.task{
     if result.code ~= 0 then
       error("the test launcher exited with code " .. tostring(result.code), 0)
     end
+  end,
+}
+
+--[[ A sources jar packages sources AND resources, which is what Gradle's
+     sourcesJar does (sourceSets.main.allSource) rather than merely resembles.
+     It needs no compilation, so it depends on nothing. D-81. ]]
+daukle.task{
+  name = "java:sources-jar",
+  run = function(context)
+    local config = config_of(context)
+    local _, source_root = source_paths(config, context.root)
+    local root, pick = provision_jdk(context)
+    local sources = readable_directory(context, root, pick, source_root)
+    if sources == nil then
+      error('no directory "' .. source_root .. '" to package sources from: set "sourceRoot" if'
+            .. ' the sources live elsewhere', 0)
+    end
+
+    local argv = append_args({ "--create", "--file", artifact_name(context.project, "-sources") },
+                             config.jarArgs, "jarArgs")
+    argv[#argv + 1] = "-C"
+    argv[#argv + 1] = sources
+    argv[#argv + 1] = "."
+    local resources = resource_directories(context, root, pick, config, { resource_root_of })
+    for index = 1, #resources do
+      argv[#argv + 1] = "-C"
+      argv[#argv + 1] = resources[index]
+      argv[#argv + 1] = "."
+    end
+    daukle.exec(root:tool(executable(context.host.os, pick, "jar")), argv)
   end,
 }

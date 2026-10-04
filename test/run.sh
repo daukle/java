@@ -52,7 +52,7 @@ run_case() {
     mkdir -p "$(dirname "$sandbox")"
     cp -R "$case_dir" "$sandbox"
     rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" \
-           "$sandbox/task.txt" "$sandbox/produces.txt" \
+           "$sandbox/task.txt" "$sandbox/produces.txt" "$sandbox/contains.txt" \
            "$sandbox/expect-task-error.txt" "$sandbox/expect-output.txt"
     stage_plugin "$sandbox"
 
@@ -142,6 +142,25 @@ run_case() {
           produced_ok=1
         fi
       done < "$case_dir/produces.txt"
+      # A zip stores entry NAMES uncompressed in its central directory, so
+      # grepping an archive for an entry name is reliable and needs no unzip on
+      # the runner. Its entry CONTENTS are deflated and are not greppable, which
+      # is why nothing here asserts on a manifest. Measured both ways. D-81.
+      if [ -f "$case_dir/contains.txt" ]; then
+        if ! grep -q . "$case_dir/contains.txt"; then
+          fail "$name/$manifest_name" "contains.txt lists nothing, so it asserts nothing"
+          produced_ok=1
+        fi
+        while IFS= read -r line || [ -n "$line" ]; do
+          [ -z "$line" ] && continue
+          target=${line%% *}
+          literal=${line#* }
+          if ! grep -qF "$literal" "$sandbox/$target"; then
+            fail "$name/$manifest_name" "$target does not carry \"$literal\""
+            produced_ok=1
+          fi
+        done < "$case_dir/contains.txt"
+      fi
       [ "$produced_ok" -eq 0 ] && passed=$((passed + 1))
       continue
     fi

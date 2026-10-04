@@ -6,9 +6,9 @@ release asset, one uncompressed tar of the three files, and acquired by a `[plug
 
 ## What this plugin owns
 
-A `java` toolchain that compiles, tests, runs and packages a JVM project with a JDK it provisions
-itself. It generates no file anywhere. Everything it writes into the project is written by `javac`,
-`jar` or the test launcher into `build/daukle/java/`.
+A `java` toolchain that compiles, tests, runs and packages a JVM project, with its resources, using
+a JDK it provisions itself. It generates no file anywhere. Everything it writes into the project is
+written by `javac`, `jar` or the test launcher into `build/daukle/java/`.
 
 It also exports `lib/jdks`, which is the table of pinned Temurin archives. `gradle` and `maven`
 reach it with `daukle.require("java:lib/jdks")` to learn which JDK a host needs; they provision it
@@ -136,6 +136,44 @@ carries it.
 `javac` itself cannot do this: a directory argument is refused, it expands a FLAT glob but refuses
 `**`, so a package tree genuinely needs a list.
 
+## Resources, and what a jar contains
+
+`resourceRoot` defaults to `src/main/resources` and `testResourceRoot` to `src/test/resources`.
+**Both are optional and silently absent**, which is the asymmetry worth knowing: a missing
+`sourceRoot` is an error, because a project with no sources is a mistake, and a missing resource
+directory is the common case.
+
+**Resources are never copied.** The directory goes on the classpath as itself and into a jar as a
+second `-C` group, so `java:run` and `java:test` see a resource exactly as a packaged consumer
+would. Nothing is staged into `classes/`, which also means a plugin needs no ability to write
+files.
+
+| root | compile | run | jar | test | sources jar |
+| --- | --- | --- | --- | --- | --- |
+| `sourceRoot` | compiled | via `classes/` | via `classes/` | via `classes/` | **packaged** |
+| `resourceRoot` | no | **classpath** | **packaged** | **classpath** | **packaged** |
+| `testResourceRoot` | no | no | no | **classpath** | no |
+
+**Resources are deliberately not on the compile classpath.** `javac` does not read them, and
+putting them there lets a source resolve a class out of a resource directory, which is a confusing
+way to make a build pass. **A test fixture never reaches the jar**, which is why
+`testResourceRoot` stops at the test classpath.
+
+**`main` is optional for `java:jar` and required for `java:run`.** With no `main` the jar carries
+no `Main-Class`, exactly as Gradle's does, because a library has no entry point. That is `D-74`'s
+finding applied one task over: `java:compile` stopped requiring `roots` for the same reason and
+`java:jar` went on charging for it until 2026-10-04.
+
+`java:sources-jar` packages the source root and, when present, the resource root, as
+`<artifact>-sources.jar`. It needs no compilation and depends on nothing. **It does not meet the
+argument ceiling** in "How sources are found", because `jar -C dir .` is a fixed argument count
+however large the tree.
+
+**Presence is measured by running `jar`, not by asking.** The sandbox has no directory verb, so the
+plugin probes with `jar --create -C <dir> .` under `check = false` and reads the exit code. The
+probe is not optional: `jar --create -C classes . -C nosuchdir .` fails the whole invocation, so an
+absent resource root must be omitted rather than passed and tolerated.
+
 ## Running a project's tests
 
 `java:test-compile` compiles `testSourceRoot`, defaulting to `src/test/java`, into `test-classes/`
@@ -170,6 +208,11 @@ nothing discovered under `testSourceRoot`.
 - a case with `task.txt` runs `daukle <task>`. It carries exactly one of `produces.txt`, requiring
   every listed path to exist and be non-empty afterwards, or `expect-task-error.txt`, requiring the
   task to fail carrying that clause; the two are mutually exclusive and a case carrying both fails
+- a case may add `contains.txt` beside `produces.txt`, each line a produced path and a literal that
+  must appear in it. **It is for archive ENTRY NAMES**: a zip stores them uncompressed in its
+  central directory, so grepping the archive finds them with no `unzip` on the runner. **Entry
+  CONTENTS are deflated and are not greppable**, which is why nothing asserts on a manifest;
+  measured both ways
 - a case with `expected/` must sync cleanly and match every file byte for byte, and is synced twice
 - a case whose `expected/` or `produces.txt` lists nothing is a failure, not a pass
 
@@ -226,6 +269,17 @@ it.
 
 **No case has more test sources than fit in one `javac` invocation**, which is the ceiling
 "How sources are found" names. Every case here is one or two files.
+
+**Nothing asserts that a jar's manifest LACKS `Main-Class`.** A manifest is deflated, so the
+`contains.txt` trick cannot read it, and no case unpacks a jar. What is asserted is that
+`java:jar` SUCCEEDS with no `main`, which is what used to fail; the absence of the attribute is
+`jar`'s own behaviour and is taken on trust.
+
+**No case has a resource whose name collides with a class file path.** Two `-C` groups writing the
+same entry is a real packaging hazard and this plugin neither detects nor resolves it.
+
+**No case reads a resource from a jar through a CONSUMER.** A resource being in the archive is not
+the same as a dependent project loading it, and nothing here builds that chain.
 
 **`for_host`'s missing-digest branch is unreachable by any test.** The guard refuses any host and
 version combination the table does not hold, which includes every architecture daukle reports as

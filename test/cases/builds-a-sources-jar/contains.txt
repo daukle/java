@@ -1,0 +1,2 @@
+build/daukle/java/app-sources.jar Api.java
+build/daukle/java/app-sources.jar logback.xml
