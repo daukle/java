@@ -1,4 +1,4 @@
-daukle.plugin{ api = 1, uses = { "provision", "artifact", "exec" },
+daukle.plugin{ api = 1, uses = { "provision", "artifact", "exec", "write" },
                exports = { "lib/jdks", "lib/launcher" } }
 
 local jdks = daukle.require("lib/jdks")
@@ -290,8 +290,28 @@ end
 
 local SOURCE_ARCHIVE = ".daukle-sources.jar"
 local TEST_SOURCE_ARCHIVE = ".daukle-test-sources.jar"
+local SOURCE_ARGFILE = ".daukle-sources.args"
+local TEST_SOURCE_ARGFILE = ".daukle-test-sources.args"
 local CLASSES = "classes"
 local TEST_CLASSES = "test-classes"
+
+--[[ One argument per source would cap a project at about 250 files, and
+     raising that would not help: Windows refuses a command line over 32767
+     characters, which at ordinary path lengths is fewer sources still. An
+     argfile turns the whole list into one argument. D-80.
+
+     javac treats backslash as an escape INSIDE quotes, so an unescaped
+     "C:\Users\..." arrives as "C:Users...". Quoting and doubling the
+     backslashes is the one form that survives both a Windows path and a path
+     containing a space; on POSIX the doubling matches nothing and the quoting
+     is what carries the space. ]]
+local function source_argfile(paths, name)
+  local lines = {}
+  for index = 1, #paths do
+    lines[index] = '"' .. string.gsub(paths[index], "\\", "\\\\") .. '"'
+  end
+  return "@" .. daukle.write{ path = name, text = table.concat(lines, "\n") .. "\n" }
+end
 
 --[[ jar walks a tree recursively and prints it, which is the only enumeration
      available to a plugin: the sandbox has no directory verb and daukle.read
@@ -402,7 +422,7 @@ daukle.task{
       argv[#argv + 1] = classpath
     end
     append_args(argv, config.compileArgs, "compileArgs")
-    for index = 1, #paths do argv[#argv + 1] = paths[index] end
+    argv[#argv + 1] = source_argfile(paths, SOURCE_ARGFILE)
 
     daukle.exec(root:tool(executable(context.host.os, pick, "javac")), argv)
   end,
@@ -487,7 +507,7 @@ daukle.task{
     argv[#argv + 1] = "-cp"
     argv[#argv + 1] = classpath_argument(context, entries)
     append_args(argv, config.compileArgs, "compileArgs")
-    for index = 1, #paths do argv[#argv + 1] = paths[index] end
+    argv[#argv + 1] = source_argfile(paths, TEST_SOURCE_ARGFILE)
 
     daukle.exec(root:tool(executable(context.host.os, pick, "javac")), argv)
   end,

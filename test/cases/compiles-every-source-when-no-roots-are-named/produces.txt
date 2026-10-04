@@ -1,2 +1,3 @@
 build/daukle/java/classes/com/example/Alpha.class
 build/daukle/java/classes/com/example/deep/Beta.class
+build/daukle/java/.daukle-sources.args
