@@ -70,9 +70,19 @@ the same `url` and `sha256` fields. That is the same shape `daukle/c` receives a
 
 ## Limits a user will meet
 
-**A class reached only reflectively or through `ServiceLoader` is not compiled** unless it is named
-in `roots`. `javac -sourcepath` compiles what is reachable from the roots it is given, and nothing
-here detects a class that is not.
+**`roots` NARROWS what is compiled; leaving it out compiles everything.** A toolchain naming
+neither `roots` nor `main` compiles every `.java` under `sourceRoot`, which is what a library needs:
+its entry points are its consumers and none of them exists at compile time. Gradle's `java` plugin
+compiles the whole tree with no configuration, and a replacement that charges for what the original
+gives away is not one. `main` is still required by `java:run` and `java:jar`, which need an entry
+point.
+
+**When you DO name `roots`, a class no root reaches is not compiled, and nothing here reports it.**
+`javac -sourcepath` compiles what is reachable from the roots it is given, so a class reached only
+reflectively or through `ServiceLoader` is absent from the output and the first symptom is a
+`NoClassDefFoundError` in a consumer. **This plugin cannot warn**: the sandbox gives a plugin no
+log channel, only `error()`, and erroring would break the legitimate case of narrowing on purpose.
+Leaving `roots` out is the remedy.
 
 **A class name may use only ASCII identifiers.** `javac` accepts more; this plugin's validation
 does not, because Lua's `%a` is ASCII-only under the sandbox's locale.
@@ -90,6 +100,29 @@ version that was actually provisioned, so a project on the default can still see
 
 **The first build downloads roughly 331 MB and reports no progress while it does.** That is daukle's
 open risk, not this plugin's, and it is named here because this is where a user meets it.
+
+## How sources are found
+
+With no `roots` and no `main`, the plugin enumerates the source tree itself, using the JDK it has
+already provisioned:
+
+```
+jar --create --file .daukle-sources.jar -C <sourceRoot> .
+jar --list   --file .daukle-sources.jar
+```
+
+`jar` walks a tree recursively and prints it, identically on every platform. **This is the only
+enumeration available to a plugin**: the sandbox has no directory verb and `daukle.read` takes one
+file. The archive is written in the derived directory, never in the repository, and the resulting
+list is passed to `javac` through an `@argfile`, which also avoids the Windows command-line length
+limit a large tree would hit.
+
+Two refusals rather than silence: a `sourceRoot` holding no `.java` is an error naming the
+directory, and a listing larger than the **1 MiB** daukle captures from a tool (`truncated`) is an
+error telling the user to name `roots` explicitly. That cap is roughly seventeen thousand paths.
+
+`javac` itself cannot do this: a directory argument is refused, it expands a FLAT glob but refuses
+`**`, so a package tree genuinely needs a list.
 
 ## Tests
 

@@ -8,10 +8,6 @@ local function roots_of(config)
   if roots ~= nil and type(roots) ~= "table" then
     error('"roots" must be a list of class names, not a ' .. type(roots), 0)
   end
-  if roots == nil and main == nil then
-    error('a java toolchain needs "main" or "roots": there is nothing to compile'
-          .. ' without at least one root class', 0)
-  end
   return roots, main
 end
 
@@ -61,11 +57,20 @@ local function class_to_path(name, key)
   return path .. ".java"
 end
 
+--[[ A nil path list means every source under the source root, which is what a
+     LIBRARY needs: its entry points are its consumers and none of them exists
+     at compile time, so naming roots would restate the source tree by hand.
+     Gradle's java plugin compiles the whole tree with no configuration, and a
+     replacement that charges for what the original gives away is not one.
+     D-74. ]]
 local function source_paths(config, project_root)
   local roots, main = roots_of(config)
   local source_root = config.sourceRoot or DEFAULT_SOURCE_ROOT
   if type(source_root) ~= "string" then
     error('"sourceRoot" must be a path string, not a ' .. type(source_root), 0)
+  end
+  if roots == nil and main == nil then
+    return nil, source_root
   end
   local prefix = project_root .. "/" .. source_root .. "/"
   local paths = {}
@@ -78,7 +83,8 @@ local function source_paths(config, project_root)
     paths[#paths + 1] = prefix .. class_to_path(main, "main")
   end
   if #paths == 0 then
-    error('a java toolchain needs at least one root class, and "roots" is empty', 0)
+    error('"roots" is empty: remove it to compile every source under "'
+          .. source_root .. '", or name at least one class', 0)
   end
   return paths, source_root
 end
@@ -231,6 +237,42 @@ local function executable(host_os, pick, name)
   return pick.home .. "/bin/" .. name .. suffix
 end
 
+local SOURCE_ARCHIVE = ".daukle-sources.jar"
+
+--[[ jar walks a tree recursively and prints it, which is the only enumeration
+     available to a plugin: the sandbox has no directory verb and daukle.read
+     takes one file. The tool is the JDK's own, already provisioned, so this
+     costs no new acquisition and behaves the same on every platform. ]]
+local function listed_entries(jar_tool, archive, directory, suffix)
+  daukle.exec(jar_tool, { "--create", "--file", archive, "-C", directory, "." })
+  local listed = daukle.exec(jar_tool, { "--list", "--file", archive }, { capture = true })
+  if listed.truncated then
+    error('the listing of "' .. directory .. '" exceeded the 1 MiB daukle captures from a'
+          .. ' tool, so it cannot be read in full: name "roots" explicitly for a tree'
+          .. ' this large', 0)
+  end
+  local entries = {}
+  for line in string.gmatch(listed.stdout, "[^\r\n]+") do
+    if string.sub(line, -#suffix) == suffix then
+      entries[#entries + 1] = line
+    end
+  end
+  return entries
+end
+
+local function enumerated_sources(context, root, pick, source_root)
+  local jar_tool = root:tool(executable(context.host.os, pick, "jar"))
+  local directory = context.root .. "/" .. source_root
+  local entries = listed_entries(jar_tool, SOURCE_ARCHIVE, directory, ".java")
+  if #entries == 0 then
+    error('no ".java" source was found under "' .. source_root .. '": set "sourceRoot" if the'
+          .. ' sources live elsewhere, or name "roots" or "main"', 0)
+  end
+  local paths = {}
+  for index = 1, #entries do paths[index] = directory .. "/" .. entries[index] end
+  return paths, entries
+end
+
 local function artifact_name(project)
   local last = string.match(project, "([^/]+)$")
   if last == nil then
@@ -255,6 +297,9 @@ daukle.task{
     local config = config_of(context)
     local paths, source_root = source_paths(config, context.root)
     local root, pick = provision_jdk(context)
+    if paths == nil then
+      paths = enumerated_sources(context, root, pick, source_root)
+    end
 
     local argv = { "-d", "classes", "-sourcepath", context.root .. "/" .. source_root }
     local release = release_of(config)
