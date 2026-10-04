@@ -1,1 +1,0 @@
-needs "main": a jar's entry point cannot be inferred from "roots"
