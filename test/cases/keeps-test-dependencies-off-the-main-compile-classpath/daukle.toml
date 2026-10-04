@@ -1,0 +1,16 @@
+schema = 1
+project = "example/app"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+java = "./plugins/java"
+
+[toolchains.java]
+version = "21"
+
+[[toolchains.java.testClasspath]]
+url = "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter-api/5.10.1/junit-jupiter-api-5.10.1.jar"
+sha256 = "60d5c398c32dc7039b99282514ad6064061d8417cf959a1f6bd2038cc907c913"
+as = "junit-jupiter-api 5.10.1"

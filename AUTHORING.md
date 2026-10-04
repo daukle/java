@@ -1,17 +1,19 @@
 # Authoring notes
 
-`plugin.lua` and `lib/jdks.lua` are the whole plugin. It is published as a release asset, one
-uncompressed tar of both files, and acquired by a `[plugins]` entry naming `daukle/java@<range>`.
+`plugin.lua`, `lib/jdks.lua` and `lib/launcher.lua` are the whole plugin. It is published as a
+release asset, one uncompressed tar of the three files, and acquired by a `[plugins]` entry naming
+`daukle/java@<range>`.
 
 ## What this plugin owns
 
-A `java` toolchain that compiles, runs and packages a JVM project with a JDK it provisions itself.
-It generates no file anywhere. Everything it writes into the project is written by `javac` or `jar`
-into `build/daukle/java/`.
+A `java` toolchain that compiles, tests, runs and packages a JVM project with a JDK it provisions
+itself. It generates no file anywhere. Everything it writes into the project is written by `javac`,
+`jar` or the test launcher into `build/daukle/java/`.
 
 It also exports `lib/jdks`, which is the table of pinned Temurin archives. `gradle` and `maven`
 reach it with `daukle.require("java:lib/jdks")` to learn which JDK a host needs; they provision it
-themselves, under their own capability.
+themselves, under their own capability. `lib/launcher` is exported on the same terms and is the
+pinned JUnit Platform console launcher.
 
 ## What it does not own
 
@@ -24,8 +26,8 @@ no dependency. Merging several jars correctly needs the resource-merge rules a s
 a half-done version produces a jar that runs until a `ServiceLoader` lookup returns the wrong
 implementation.
 
-Tests, annotation processors, the module path, javadoc and signing. The design spec's section 3
-lists them with the reason.
+Annotation processors, the module path, javadoc and signing. The design spec's section 3 lists them
+with the reason. **Tests left this list on 2026-10-04** and are below.
 
 ## The classpath
 
@@ -42,7 +44,10 @@ as = "slf4j-api 2.0.13"
 there is no unpinned form. `as` is an optional label for the acquisition report. Entries reach
 `java:compile` and `java:run` in **declaration order**, which is preserved because classpath order
 decides which of two copies of a class wins. `testClasspath` takes the same fields and reaches
-`java:compile` only.
+`java:test-compile` and `java:test` only, **never `java:compile`**: a test-only dependency is not
+on the main compile classpath, which is `testImplementation` against `implementation` in Gradle's
+terms. It reached `java:compile` until 2026-10-04, so a main source could import a test-only
+dependency, compile, and fail at run time.
 
 **The jar is kept as a jar and never unpacked**, and that is the whole point rather than an
 implementation detail. An exploded jar is not a jar: a multi-release dependency serves its
@@ -113,16 +118,49 @@ jar --list   --file .daukle-sources.jar
 
 `jar` walks a tree recursively and prints it, identically on every platform. **This is the only
 enumeration available to a plugin**: the sandbox has no directory verb and `daukle.read` takes one
-file. The archive is written in the derived directory, never in the repository, and the resulting
-list is passed to `javac` through an `@argfile`, which also avoids the Windows command-line length
-limit a large tree would hit.
+file. The archive is written in the derived directory, never in the repository.
 
-Two refusals rather than silence: a `sourceRoot` holding no `.java` is an error naming the
-directory, and a listing larger than the **1 MiB** daukle captures from a tool (`truncated`) is an
-error telling the user to name `roots` explicitly. That cap is roughly seventeen thousand paths.
+Three refusals rather than silence: a missing `sourceRoot` and a `sourceRoot` holding no `.java`
+are each an error naming the directory, and a listing larger than the **1 MiB** daukle captures
+from a tool (`truncated`) is an error telling the user to name `roots` explicitly.
+
+**The binding limit is not that one, and this section said it was until 2026-10-04.** The
+enumerated paths are appended to `argv` one per source, and `daukle.exec` takes **at most 256
+arguments** (`FR_VERB_MAX_ARGV`), so a project of roughly **250 sources or more cannot compile**
+and fails with daukle's argument-count message rather than anything about sources. The 1 MiB
+listing ceiling is about seventeen thousand paths and is therefore never reached first. This
+section used to claim the list "is passed to `javac` through an `@argfile`"; **there is no
+argfile**, and a plugin could not write one, because the sandbox exposes no write verb. `D-80`
+carries it.
 
 `javac` itself cannot do this: a directory argument is refused, it expands a FLAT glob but refuses
 `**`, so a package tree genuinely needs a list.
+
+## Running a project's tests
+
+`java:test-compile` compiles `testSourceRoot`, defaulting to `src/test/java`, into `test-classes/`
+beside `classes/`. They are kept apart because `java:jar` packages `-C classes .` whole and a test
+class in there would ship in the artifact. `java:test` then runs the JUnit Platform console
+launcher over `test-classes/`.
+
+**A project declares nothing about the launcher and needs nothing in `testClasspath` to write a
+JUnit 5 test.** `lib/launcher.lua` pins `junit-platform-console-standalone`, which carries the
+jupiter API, the jupiter engine, the vintage engine, `opentest4j` and `apiguardian` in one jar. It
+is pinned here for the reason the default JDK version is: a given plugin version always runs the
+same launcher. A project that wants a different JUnit puts it in `testClasspath`, where it lands
+**before** the launcher on the compile classpath and wins.
+
+Test sources are **always enumerated** and there is no `testRoots` or `testMain`. `roots` and
+`main` exist because a program has entry points a human knows; a test tree's entry points are every
+`@Test` in it.
+
+**`--fail-if-no-tests` is passed always and is not configurable.** Without it the launcher exits 0
+on a tree it discovered nothing in, so `java:test` would be green on a project whose tests reach
+nothing. The launcher's exit codes are mapped rather than reported raw: 1 is a failing test, 2 is
+nothing discovered under `testSourceRoot`.
+
+`testArgs` appends arguments to the launcher, which is how a project reaches `--include-tag`,
+`--select-class`, `--reports-dir` or `--details=tree` without this plugin modelling any of them.
 
 ## Tests
 
@@ -136,7 +174,8 @@ error telling the user to name `roots` explicitly. That cap is roughly seventeen
 - a case whose `expected/` or `produces.txt` lists nothing is a failure, not a pass
 
 **Task cases run by default on Linux only.** They provision a real JDK, and one download per CI run
-is the trade. Set `DAUKLE_JAVA_E2E=1` to run them on Windows or macOS.
+is the trade. Set `DAUKLE_JAVA_E2E=1` to run them on Windows or macOS. The test cases also fetch
+the 3 MB launcher, which is small enough beside the JDK's 331 MB to need no gate of its own.
 
 **Do not use `javaw` as a broken-tool mutation on Windows.** Temurin's Windows JDK ships
 `javaw.exe` beside `java.exe`, and with output redirected it runs a class identically, so the swap
@@ -176,6 +215,16 @@ somewhere else would still pass every case.
 **No case runs a task twice.** Every sync case is run twice to prove that applying twice equals
 applying once, and task cases get no equivalent, so a task that is not idempotent would not be
 caught here.
+
+**`testArgs` is validated and never exercised.** A case proves a non-list is refused; none passes a
+real launcher argument, so a mistake in how `testArgs` is appended would not be caught here.
+
+**No case runs a JUnit 4 test.** The pinned launcher carries the vintage engine, so a JUnit 4 test
+on the classpath is discovered, but nothing here asserts it and the plugin promises nothing about
+it.
+
+**No case has more test sources than fit in one `javac` invocation**, which is the ceiling
+"How sources are found" names. Every case here is one or two files.
 
 **`for_host`'s missing-digest branch is unreachable by any test.** The guard refuses any host and
 version combination the table does not hold, which includes every architecture daukle reports as
