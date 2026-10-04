@@ -1,1 +1,0 @@
-needs "main" or "roots": there is nothing to compile without at least one

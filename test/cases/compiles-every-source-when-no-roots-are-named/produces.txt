@@ -1,0 +1,2 @@
+build/daukle/java/classes/com/example/Alpha.class
+build/daukle/java/classes/com/example/deep/Beta.class
