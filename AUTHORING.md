@@ -124,14 +124,21 @@ Three refusals rather than silence: a missing `sourceRoot` and a `sourceRoot` ho
 are each an error naming the directory, and a listing larger than the **1 MiB** daukle captures
 from a tool (`truncated`) is an error telling the user to name `roots` explicitly.
 
-**The binding limit is not that one, and this section said it was until 2026-10-04.** The
-enumerated paths are appended to `argv` one per source, and `daukle.exec` takes **at most 256
-arguments** (`FR_VERB_MAX_ARGV`), so a project of roughly **250 sources or more cannot compile**
-and fails with daukle's argument-count message rather than anything about sources. The 1 MiB
-listing ceiling is about seventeen thousand paths and is therefore never reached first. This
-section used to claim the list "is passed to `javac` through an `@argfile`"; **there is no
-argfile**, and a plugin could not write one, because the sandbox exposes no write verb. `D-80`
-carries it.
+**The list reaches `javac` through an `@argfile`, and since 2026-10-04 that is true.** It was
+written here before it was built: the paths used to be appended to `argv` one per source, and
+`daukle.exec` takes at most 256 arguments, so a project of roughly **250 sources could not compile
+at all**. `D-80` measured that raising the cap would not have helped, because Windows refuses a
+command line over 32767 characters, which at ordinary path lengths is fewer sources still, and
+because the real ceiling is a character count that moves when the checkout moves. The argfile makes
+the whole list one argument: **400 sources compile, where 253 failed.**
+
+**The quoting rule is not obvious and the obvious one is wrong.** `javac` treats backslash as an
+escape INSIDE quotes, so an unescaped `"C:\Users\finn\..."` arrives as `C:Users innAppData...`.
+Each path is quoted AND its backslashes doubled, which is the one form that survives both a Windows
+path and a path containing a space. On POSIX the doubling matches nothing and the quoting carries
+the space. **`jar` does not accept that same file** (`option --file requires an argument`), so the
+dialect is per tool and lives here rather than in core, which is why `daukle.write` hands back a
+path and formats nothing.
 
 `javac` itself cannot do this: a directory argument is refused, it expands a FLAT glob but refuses
 `**`, so a package tree genuinely needs a list.
