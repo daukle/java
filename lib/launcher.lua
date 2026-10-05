@@ -16,7 +16,16 @@ local SHA256 = "e62b96ac475dbcde8599ea905d088f65d90778f86e259b856a49fa5c4ea256ec
      testClasspath can still write and run a JUnit 5 test. Measured: 2135
      entries, and bytecode compiled against jupiter 5.10.1 runs under it
      unchanged. Platform 6 needs java 17, which every version lib/jdks.lua pins
-     satisfies. ]]
+     satisfies.
+
+     It carries JUnit 4 and hamcrest TOO, which this note omitted until it was
+     measured on 2026-10-05: org/junit/Assert.class and
+     org/hamcrest/MatcherAssert.class are both in those 2135 entries, because
+     the vintage engine is shaded in with its own dependencies. So a junit 4
+     test compiles and runs here with an EMPTY testClasspath, and a project
+     that wants to know whether its resolved test dependencies are reaching
+     the compiler cannot find out with junit or hamcrest. assertj and mockito
+     are not in the jar and are the honest probes. ]]
 local function jar()
   return {
     url = "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/"
