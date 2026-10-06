@@ -4,11 +4,14 @@ A managed Java project. The repository holds `daukle.toml` and `src/main/java/` 
 file**: no Gradle, no Maven, no wrapper, no `pom.xml`. daukle downloads a JDK, verifies it against a
 digest the plugin pins, and runs `javac` and `jar` out of it.
 
+```console
+$ daukle java:run
+hello from daukle
 ```
-daukle java:run     # compiles and runs, printing "hello from daukle"
-daukle java:jar     # packages build/daukle/java/example-java-hello-jar.jar
-daukle tasks        # lists the three tasks the plugin declares and their order
-```
+
+`daukle java:jar` packages `build/daukle/java/example-java-hello-jar.jar`, and `daukle tasks` lists
+the three tasks the plugin declares and their order. Only the `console` block is executed, so the
+JDK-heavy tasks are named here rather than run a second and third time for no new information.
 
 ## What to look at
 
@@ -41,16 +44,13 @@ implementation in Lua.
 
 ## What this example cannot show
 
-**A classpath**, which this example does not use although the toolchain has one. `classpath` and
-`testClasspath` take pinned entries, each a url and a sha256, and `1.1.0` compiles and runs against
-them. What is still missing is **resolution**: a coordinate like `com.example:thing:1.2` is not
-turned into a url, a digest and a transitive closure by anything here, so every entry is written out
-by hand. Coordinates for Java libraries are what `daukle/gradle` and a future `maven` plugin are
-for, and neither replaces its tool.
+**A classpath**, which this example does not use although the toolchain has one. The example next
+door, `java-pinned-classpath`, is the one that does: `classpath` and `testClasspath` take pinned
+entries, each a url and a sha256, and it compiles and runs against one.
 
-This paragraph said the opposite until 2026-10-02, on the grounds that `daukle.provision` does not
-keep an archive and a classpath entry IS the archive. Both halves were measured false: a jar has to
-stay the file it was published as, which is what `daukle.artifact` now does.
+What neither of them shows is **resolution**: a coordinate like `com.example:thing:1.2` becoming a
+url, a digest and a transitive closure. That is `daukle/maven`, which writes classpath blocks of
+exactly that shape into a generated file the manifest includes, so that nobody writes them by hand.
 
 **A class reached only reflectively or through `ServiceLoader`** is not compiled unless you name it
 in `roots`. `javac -sourcepath` compiles what is reachable from the roots it is given.
@@ -60,13 +60,12 @@ in `roots`. `javac -sourcepath` compiles what is reachable from the roots it is 
 Roughly 331 MB of JDK, with no progress reported while it downloads. It is cached per digest
 afterwards, shared by every project on the machine that pins the same JDK.
 
-## The two `.txt` files, which are harness inputs rather than part of the example
+## The one file that is a harness input rather than part of the example
 
-`task.txt` and `expect-output.txt` are read by `test/run.sh`, not by daukle. `task.txt` holds the
-one task CI runs here, `java:run`, and `expect-output.txt` the clause its output must contain,
-`hello from daukle`. They sit beside the example rather than in `test/` so each example
-carries its own expectations. An example with no `task.txt` is checked for its generated files
-and never run.
+`needs-tools` marks this example as one that provisions real tools, which the harness skips unless
+`DAUKLE_EXAMPLE_E2E=1` is set. CI sets it on every runner. The `console` block above is **executed**
+rather than decorative: its `$ ` line is run and the line beneath it must appear in the output, so
+the command and its result cannot drift apart the way a separate expectation file did.
 
 **There is no committed executable here, and nothing is missing.** `java:run` really does build and
 run the program; `build/` is gitignored, which is the only reason you cannot see the result in the
