@@ -1,0 +1,24 @@
+schema = 1
+project = "daukle/example-pinned-classpath"
+version = "1.0.0"
+
+[modules]
+
+[resolvers.github]
+url = "https://raw.githubusercontent.com/daukle/daukle/1f515141e06d16eace718a45944a39933611fa39/plugins/github-releases.lua"
+sha256 = "3789865c266eb53fafcf7300d77a24461170c615195d92d0ddf88078c556e23e"
+
+[plugins]
+java = { resolver = "github", coordinate = "daukle/java@^1.0.0" }
+
+[toolchains.java]
+version = "17"
+main = "example.Main"
+
+# A dependency, by hand. Every classpath entry is a url and the sha256 of the
+# bytes that url must serve: there is no unpinned form. Writing these out is
+# exactly what daukle/maven exists to stop you doing, and page 4 says so.
+[[toolchains.java.classpath]]
+url = "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/1.7.36/slf4j-api-1.7.36.jar"
+sha256 = "d3ef575e3e4979678dc01bf1dcce51021493b4d11fb7f1be8ad982877c16a1c0"
+as = "slf4j-api 1.7.36"
