@@ -19,8 +19,8 @@ main = "example.Main"
 
 | key | meaning |
 | --- | --- |
-| `version` | which JDK to provision. Moves only with a release of this plugin |
-| `release` | the Java source and target level |
+| `version` | which JDK to provision: `"17"`, `"21"` or `"25"`, exact. Moves only with a release of this plugin |
+| `release` | the Java source and target level. **This is how you target an OLD Java**, not an old `version` |
 | `sourceRoot` | defaults to `src/main/java` |
 | `resourceRoot` | defaults to `src/main/resources` |
 | `testSourceRoot` | defaults to `src/test/java` |

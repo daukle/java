@@ -95,6 +95,23 @@ does not, because Lua's `%a` is ASCII-only under the sandbox's locale.
 **`version` must be an exact major version.** `>=17` is refused. This plugin pins its JDKs and does
 not match ranges, because doing so would mean a semver implementation in Lua.
 
+**The pinned majors are 17, 21 and 25, and that is a MEASURED range rather than a taste.** Of 433
+build files under `F:/Documents/GitHub`, **57 declare which JDK has to run the build**: 39 ask for
+17, 7 for 21, 5 for 25, 7 for 8 and 1 for 11. The three pinned here cover **51 of 57**.
+
+**The six that are left are the `release` case and no row would serve them.** Asking for JDK 8
+confuses the two axes this plugin keeps apart: `version` is which JDK COMPILES, `release` is which
+bytecode comes OUT, and `javac --release 8` from a modern JDK emits Java 8 classes with Java 8's
+API signatures. `intisy/libs/java-utils` targets Java 8 and builds here on JDK 17 for exactly that
+reason. **A JDK 8 row would be a second way to say something `release` already says**, and it would
+pin a JDK whose own support ended. The refusal names this rather than leaving a user to guess.
+
+**`test/pins.sh` checks every row against the `.sha256.txt` Adoptium publishes**, one small GET
+each, because the e2e cases provision ONE JDK and every other row was asserted by nothing. It is
+gated on `DAUKLE_JAVA_E2E=1` and CI runs it on all three runners. It **fails on a row it cannot
+parse** rather than skipping it, so a digest added in the wrong shape cannot pass by being
+invisible; both that and a wrong digest are exercised as negative controls.
+
 **`version` may be left out, and then it is 21.** The default is pinned in this plugin and moves
 only with a release of it, which is what makes having one compatible with daukle's reproducibility
 stance at all: a given plugin version always provisions the same JDK, so two machines holding one

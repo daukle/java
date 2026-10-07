@@ -1,1 +1,1 @@
-no pinned JDK for java 99 on this host
+no pinned JDK for java "99". This plugin pins 25, 21, 17.
