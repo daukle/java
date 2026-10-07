@@ -1,4 +1,10 @@
+--[[ Which JDK RUNS the build, which is not which bytecode comes out: javac's
+     own --release does that, so a project targeting Java 8 needs no JDK 8 row
+     and "release" is the key for it. Measured across 433 build files here, 57
+     declare a toolchain to compile WITH: 39 ask for 17, 7 for 21, 5 for 25,
+     7 for 8 and 1 for 11. The last two are the --release case. D-112. ]]
 local RELEASES = {
+  ["25"] = { full = "25.0.4.1+1", underscored = "25.0.4.1_1" },
   ["21"] = { full = "21.0.5+11", underscored = "21.0.5_11" },
   ["17"] = { full = "17.0.13+11", underscored = "17.0.13_11" },
 }
@@ -22,6 +28,15 @@ local ASSET_EXT = { linux = "tar.gz", windows = "zip", macos = "tar.gz" }
 -- Never computed from a file on disk: core.autocrlf rewrites line endings and
 -- a digest taken from a working tree stops matching the published bytes.
 local DIGESTS = {
+  -- Temurin 25 publishes no windows/aarch64 build either, so it has the same
+  -- five rows as 17 rather than 21's six.
+  ["25"] = {
+    ["linux/x86_64"]    = "dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e",
+    ["linux/aarch64"]   = "69df11a02cfa3ef7d7ca645e03edce6778ec090e100f6ae2b42097865730ac52",
+    ["macos/x86_64"]    = "e6229d9504f7922053ab31821b9e6bee8761daf7b026a3476d1a027563009880",
+    ["macos/aarch64"]   = "61979887f7506a24a57439ff99adb8b3a7fc89977d9cfe3b8984f58a981b7b9d",
+    ["windows/x86_64"]  = "00c847d804f4a78e9f04f2683faf14fed898535b177b7fc704486cb0284e9283",
+  },
   ["21"] = {
     ["linux/x86_64"]    = "3c654d98404c073b8a7e66bffb27f4ae3e7ede47d13284c132d40a83144bfd8c",
     ["linux/aarch64"]   = "6482639ed9fd22aa2e704cc366848b1b3e1586d2bf1213869c43e80bca58fe5c",
@@ -48,6 +63,14 @@ local function asset_url(major, release, os_name, arch)
     release.underscored, ASSET_EXT[os_name])
 end
 
+--- The pinned majors, newest first, for a refusal that names them.
+local function known()
+  local versions = {}
+  for version in pairs(RELEASES) do versions[#versions + 1] = version end
+  table.sort(versions, function(left, right) return tonumber(left) > tonumber(right) end)
+  return table.concat(versions, ", ")
+end
+
 local function for_host(request)
   local version = request.version
   local os_name = request.os
@@ -56,9 +79,23 @@ local function for_host(request)
   local release = RELEASES[version]
   local digests = DIGESTS[version]
   local key = os_name .. "/" .. arch
-  if release == nil or digests == nil or digests[key] == nil then
-    error(string.format('no pinned JDK for java %s on this host (%s %s)',
-                        tostring(version), tostring(os_name), tostring(arch)), 0)
+
+  --[[ The two failures are different and the message said the same thing for
+       both. A version this plugin does not pin is answered by the list; a
+       version it pins but not for this host is answered by nothing the user
+       can change, so saying so is the whole of the help. And an OLD version is
+       almost always the wrong question: "release" targets old bytecode from a
+       modern JDK, which is why there is no JDK 8 row and should not be. ]]
+  if release == nil or digests == nil then
+    error(string.format('no pinned JDK for java "%s". This plugin pins %s.'
+                        .. ' To target an OLDER Java than the one it compiles with, set "release"'
+                        .. ' rather than asking for an old JDK: javac emits that bytecode itself',
+                        tostring(version), known()), 0)
+  end
+  if digests[key] == nil then
+    error(string.format('java %s is pinned, but Temurin publishes no %s %s build of it,'
+                        .. ' so there is nothing for this host to download',
+                        version, tostring(os_name), tostring(arch)), 0)
   end
 
   return {
