@@ -26,6 +26,14 @@ no dependency. Merging several jars correctly needs the resource-merge rules a s
 a half-done version produces a jar that runs until a `ServiceLoader` lookup returns the wrong
 implementation.
 
+**`daukle/gradle` serves it instead, and that is measured rather than offered as a consolation.**
+All 62 build files in this tree that apply a shadow plugin are Gradle build files, and
+`daukle/gradle` applies a real one from a jar `daukle/maven` pinned, relocates the closure and
+produces a jar `java -jar` runs, with no repository in the generated build and no Gradle in the
+project. So the user is not sent back to the tool, which is the only test this boundary has to
+pass. `D-114`, and `D-48` ranks the rest: a sources jar is wanted by 5 build files and a javadoc
+jar by 3.
+
 Annotation processors, the module path, javadoc and signing. The design spec's section 3 lists them
 with the reason. **Tests left this list on 2026-10-04** and are below.
 
