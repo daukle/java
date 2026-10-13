@@ -1,7 +1,7 @@
 # Authoring notes
 
-`plugin.lua`, `lib/jdks.lua` and `lib/launcher.lua` are the whole plugin. It is published as a
-release asset, one uncompressed tar of the three files, and acquired by a `[plugins]` entry naming
+`plugin.lua` plus `lib/` is the whole plugin. It is published as a release asset, one uncompressed
+tar of `plugin.lua` and every `lib/*.lua`, and acquired by a `[plugins]` entry naming
 `daukle/java@<range>`.
 
 ## What this plugin owns
