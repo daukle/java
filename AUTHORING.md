@@ -34,6 +34,14 @@ project. So the user is not sent back to the tool, which is the only test this b
 pass. `D-114`, and `D-48` ranks the rest: a sources jar is wanted by 5 build files and a javadoc
 jar by 3.
 
+**A multi-project build, and `daukle/gradle` serves that one too.** This toolchain compiles one
+source tree per project and models no module graph: there is no `[modules]` here, no inter-module
+dependency and no per-module source root. `daukle/gradle` takes core's `[modules]` list, writes a
+`settings.gradle` including each module and a build file per module, and makes `requires` a real
+`implementation project(':x')`. The shape is small where it occurs, **2 to 5 modules in 51 of the
+60 multi-project roots in this tree**, and it is Gradle's own mechanism rather than one invented
+here. `D-111`.
+
 Annotation processors, the module path, javadoc and signing. The design spec's section 3 lists them
 with the reason. **Tests left this list on 2026-10-04** and are below.
 
