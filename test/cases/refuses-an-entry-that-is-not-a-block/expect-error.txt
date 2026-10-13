@@ -1,0 +1,1 @@
+is a string, and an entry is a block naming the class to run

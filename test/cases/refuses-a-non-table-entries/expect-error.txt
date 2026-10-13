@@ -1,0 +1,1 @@
+"entries" must be a table of per-entry blocks, not a string

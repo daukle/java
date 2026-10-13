@@ -26,13 +26,37 @@ main = "example.Main"
 | `testSourceRoot` | defaults to `src/test/java` |
 | `testResourceRoot` | defaults to `src/test/resources` |
 | `main` | the class `java:run` runs, and the jar's `Main-Class` |
+| `entries` | per-entry blocks keyed by name; each needs a `main` and may add `runArgs`, and each gets a `java:run-<name>` task |
 | `roots` | compile only these classes and what they reach; omit to compile every source |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
 | `compileArgs`, `runArgs`, `jarArgs`, `testArgs` | passed straight through |
 
 ## Tasks
 
-`java:compile`, `java:test-compile`, `java:test`, `java:jar`, `java:sources-jar`, `java:run`.
+`java:compile`, `java:test-compile`, `java:test`, `java:jar`, `java:sources-jar`, `java:run`, and
+one `java:run-<name>` per declared entry.
+
+## Several runnable classes
+
+`main` names one class. A project with more than one runnable class names the rest under
+`entries`, and each gets its own task:
+
+```toml
+[toolchains.java]
+main = "com.example.Main"
+
+[toolchains.java.entries.cheapest]
+main = "com.example.CheapestExample"
+
+[toolchains.java.entries.display-demo]
+main = "com.example.DisplayDemo"
+runArgs = ["--fullscreen"]
+```
+
+`daukle tasks` then lists `java:run-cheapest` and `java:run-display-demo` beside `java:run`, which
+still runs `main`. With entries declared and no `main`, `java:run` tells you which entry tasks
+exist instead of asking for a key you left out on purpose. A project-wide `runArgs` applies to
+every entry, and an entry's own are appended after it.
 
 ## Tests need nothing declared
 

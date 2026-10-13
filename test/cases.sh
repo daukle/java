@@ -45,7 +45,11 @@ run_case() {
   case_dir=$1
   name=$(basename "$case_dir")
 
-  for manifest in "$case_dir"/daukle*.toml; do
+  # daukle.lua too, because a Lua manifest is the one shape that makes
+  # daukle.manifest name a file daukle.parse refuses, and the entry tasks are
+  # registered from a chunk that reads it.
+  for manifest in "$case_dir"/daukle*.toml "$case_dir"/daukle.lua; do
+    [ -f "$manifest" ] || continue
     manifest_name=$(basename "$manifest")
     sandbox="$work/$name-$manifest_name"
     rm -rf "$sandbox"
@@ -53,7 +57,8 @@ run_case() {
     cp -R "$case_dir" "$sandbox"
     rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" \
            "$sandbox/task.txt" "$sandbox/produces.txt" "$sandbox/contains.txt" \
-           "$sandbox/expect-task-error.txt" "$sandbox/expect-output.txt"
+           "$sandbox/expect-task-error.txt" "$sandbox/expect-output.txt" \
+           "$sandbox/expect-tasks.txt" "$sandbox/expect-no-tasks.txt"
     stage_plugin "$sandbox"
 
     if [ -f "$case_dir/expect-error.txt" ]; then
@@ -69,6 +74,44 @@ run_case() {
       if ! grep -qF "$clause" "$sandbox/stderr.txt" "$sandbox/stdout.txt"; then
         fail "$name/$manifest_name" "message does not carry: $clause"
         continue
+      fi
+      passed=$((passed + 1))
+      continue
+    fi
+
+    # Ungated on purpose, and that is the point of it: an entry's task is
+    # registered when the chunk loads, long before anything is provisioned, so
+    # gating this behind a 190 MB JDK would leave the registration proved only
+    # where the whole toolchain already works.
+    if [ -f "$case_dir/expect-tasks.txt" ]; then
+      if ! (cd "$sandbox" && "$daukle" tasks >tasks.txt 2>tasks-stderr.txt); then
+        cat "$sandbox/tasks-stderr.txt" >&2
+        fail "$name/$manifest_name" "daukle tasks failed"
+        continue
+      fi
+      missing=
+      while IFS= read -r wanted; do
+        [ -n "$wanted" ] || continue
+        grep -qF "$wanted" "$sandbox/tasks.txt" || missing="$missing $wanted"
+      done < "$case_dir/expect-tasks.txt"
+      if [ -n "$missing" ]; then
+        cat "$sandbox/tasks.txt" >&2
+        fail "$name/$manifest_name" "daukle tasks does not name:$missing"
+        continue
+      fi
+      # A presence-only assertion cannot catch a task that must NOT be there,
+      # which is the whole claim a Lua manifest makes.
+      if [ -f "$case_dir/expect-no-tasks.txt" ]; then
+        present=
+        while IFS= read -r unwanted; do
+          [ -n "$unwanted" ] || continue
+          grep -qF "$unwanted" "$sandbox/tasks.txt" && present="$present $unwanted"
+        done < "$case_dir/expect-no-tasks.txt"
+        if [ -n "$present" ]; then
+          cat "$sandbox/tasks.txt" >&2
+          fail "$name/$manifest_name" "daukle tasks names what it must not:$present"
+          continue
+        fi
       fi
       passed=$((passed + 1))
       continue
