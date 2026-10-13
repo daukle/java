@@ -241,6 +241,13 @@ asks for one, and a key added later is cheaper than a key removed.
 rule `daukle/gradle` settled on for project-wide keys: they reach every module rather than only the
 unnamed one. An entry that must not see them is a second toolchain.
 
+**An entry's `runArgs` is JVM-level, exactly like the project-wide key, and there is NO
+program-argument mechanism here.** They are passed before the main class, so `-D` works and a flag
+a `main` expects in `args` never arrives. **This cost a red example before it was understood**: the
+first draft of `java-several-entry-points` passed `--dry-run` expecting `args`, and that is a real
+JDK 21 launcher option which loads every class and then **skips `main`**, so the run exited 0 and
+printed nothing. The `-cp` edge above is the same shape and the more expensive one.
+
 **Entries do NOT narrow what is compiled.** A project naming neither `roots` nor `main` still
 compiles its whole tree, which already holds every entry class, so declaring entries cannot
 silently compile less than before. When narrowing IS in effect, every entry's class is appended to
