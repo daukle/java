@@ -1,0 +1,2 @@
+java:run-cheapest
+java:run-newest

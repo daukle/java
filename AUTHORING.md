@@ -204,6 +204,69 @@ no `Main-Class`, exactly as Gradle's does, because a library has no entry point.
 finding applied one task over: `java:compile` stopped requiring `roots` for the same reason and
 `java:jar` went on charging for it until 2026-10-04.
 
+## N entry points
+
+`main` names ONE class and a project with several runnable ones had no way to name the rest.
+`[toolchains.java.entries.<name>]` registers a `java:run-<name>` task for each:
+
+```toml
+[toolchains.java]
+main = "com.example.Main"          # optional, still what `java:run` runs
+
+[toolchains.java.entries.cheapest]
+main = "com.example.CheapestExample"
+
+[toolchains.java.entries.display-demo]
+main = "io.github.intisy.signalflux.DisplayDemo"
+runArgs = ["--fullscreen"]
+```
+
+**`java:run-<name>` and not `java:<name>`**, because `daukle/cmake` is the precedent that fits: it
+names a buildable thing `cmake:<target>` and a runnable one `cmake:run-<target>`, and an entry
+point is only ever runnable. `node:<script>` is unprefixed because a script is not specifically a
+run.
+
+**The demand for this is in SOURCE rather than in build files**, which is worth knowing before
+extending it. Measured 2026-10-13 on the live tree: **9 projects declare several `main()` methods
+and not one of them exposes the extras through Gradle either**, so this serves a shape the tool
+left unserved rather than one it serves better. The one build file here that really declares two
+entry points needs `D-53` instead, because its second one carries `System.in`, an environment value
+and an `if` over the host OS.
+
+**Exactly two keys per entry, and the omissions are deliberate.** `main` is required and `runArgs`
+optional; a per-entry `classpath`, `roots`, `jdk` or `jarArgs` is refused by name. Nothing measured
+asks for one, and a key added later is cheaper than a key removed.
+
+**A project-wide `runArgs` reaches EVERY entry and the entry's own are appended after it.** Same
+rule `daukle/gradle` settled on for project-wide keys: they reach every module rather than only the
+unnamed one. An entry that must not see them is a second toolchain.
+
+**Entries do NOT narrow what is compiled.** A project naming neither `roots` nor `main` still
+compiles its whole tree, which already holds every entry class, so declaring entries cannot
+silently compile less than before. When narrowing IS in effect, every entry's class is appended to
+it, because a narrowed build that omitted its own entry class would fail at run time with a missing
+class instead of at compile time with a cause.
+
+**`java:run` with entries and no `main` names the entry tasks rather than demanding a key.** That
+is `node:run`'s answer one plugin over. With both declared, `java:run` runs `main`: it is the
+declared default, so there is no ambiguity to refuse, unlike `daukle/gradle`, where two modules
+declaring `main` had no tiebreak.
+
+**`java:jar` is untouched.** An entry contributes nothing to a jar's `Main-Class`. One jar per
+entry would be N artifacts, a different task, and a fat jar is served through `daukle/gradle`
+(`D-114`).
+
+**The tasks are registered from the CHUNK, and the `.toml` gate is not optional.** A daukle task
+takes no arguments, so N classes need N registered tasks (`D-110`). Parsing `daukle.manifest` when
+it is Lua is **fatal on every command** rather than degraded, which is the crash `daukle/cmake@1.4.0`
+shipped; a Lua-manifest project keeps `java:run` and gains no entry tasks. **Proved by mutation**:
+deleting the gate makes `daukle tasks` fail outright on the Lua-manifest case.
+
+**Nothing reads `main()` out of the source tree.** `pcall` is in the sandbox's `REMOVED` list and
+`daukle.read` raises, so a plugin cannot probe a path without dying on the project that lacks it.
+Entries are declared, never discovered, which is why a project with eleven example classes writes
+eleven blocks rather than getting a scan.
+
 `java:sources-jar` packages the source root and, when present, the resource root, as
 `<artifact>-sources.jar`. It needs no compilation and depends on nothing. **It does not meet the
 argument ceiling** in "How sources are found", because `jar -C dir .` is a fixed argument count

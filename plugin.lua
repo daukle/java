@@ -1,8 +1,11 @@
-daukle.plugin{ api = 1, uses = { "provision", "artifact", "exec", "write" },
-               exports = { "lib/jdks", "lib/launcher" } }
+daukle.plugin{ api = 1, uses = { "provision", "artifact", "exec", "write", "read", "parse" },
+               exports = { "lib/jdks", "lib/launcher", "lib/entries" } }
 
 local jdks = daukle.require("lib/jdks")
 local launcher = daukle.require("lib/launcher")
+--[[ Aliased because "entries" is already a local inside java:run and java:jar,
+     where it names the classpath being assembled. ]]
+local entry_points = daukle.require("lib/entries")
 
 local function roots_of(config)
   local roots = config.roots
@@ -97,6 +100,10 @@ local function source_paths(config, project_root)
   if type(source_root) ~= "string" then
     error('"sourceRoot" must be a path string, not a ' .. type(source_root), 0)
   end
+  --[[ Entries do NOT narrow on their own. A project naming neither "roots" nor
+       "main" compiles its whole tree, which already holds every entry class, so
+       a project that only declares entries keeps the library default rather
+       than silently compiling less than it did before. ]]
   if roots == nil and main == nil then
     return nil, source_root
   end
@@ -109,6 +116,14 @@ local function source_paths(config, project_root)
   end
   if main ~= nil then
     paths[#paths + 1] = prefix .. class_to_path(main, "main")
+  end
+  --[[ Appended to a narrowed list, because a narrowed build that omitted its
+       own entry classes would fail at run time with a missing class rather
+       than at compile time with a cause. ]]
+  local declared = entry_points.declared(config, class_to_path)
+  for index = 1, #declared do
+    paths[#paths + 1] = prefix .. class_to_path(declared[index].main,
+                                                'entries.' .. declared[index].name .. '.main')
   end
   if #paths == 0 then
     error('"roots" is empty: remove it to compile every source under "'
@@ -381,9 +396,44 @@ local function artifact_name(project, suffix)
   return last .. (suffix or "") .. ".jar"
 end
 
+--[[ One runner for java:run and for every java:run-<entry>, so a classpath or
+     resource change cannot reach one and miss the others.
+
+     @implNote a project-wide "runArgs" applies to EVERY entry and the entry's
+     own are appended after it, which is the same rule daukle/gradle settled on
+     for project-wide keys: they reach every module rather than only the
+     unnamed one. An entry that must not see them is a second toolchain. ]]
+local function run_class(context, main_class, run_args)
+  local root, pick = provision_jdk(context)
+  local config = config_of(context)
+  local classpath = appended({ CLASSES },
+                             resource_directories(context, root, pick, config,
+                                                  { resource_root_of }))
+  appended(classpath, classpath_of(context, config, "classpath"))
+  local argv = append_args({ "-cp", classpath_argument(context, classpath) },
+                           config.runArgs, "runArgs")
+  if run_args ~= nil then
+    for index = 1, #run_args do argv[#argv + 1] = run_args[index] end
+  end
+  argv[#argv + 1] = main_class
+  daukle.exec(root:tool(executable(context.host.os, pick, "java")), argv)
+end
+
 local function main_of(config)
   local main = config.main
   if main == nil then
+    --[[ A project that declared entries has already named what to run, so the
+         refusal names those tasks rather than demanding a key the project
+         deliberately left out. Same answer node:run gives a package that
+         declares scripts and no entry. ]]
+    local declared = entry_points.declared(config, class_to_path)
+    if #declared > 0 then
+      local names = {}
+      for index = 1, #declared do names[index] = "java:run-" .. declared[index].name end
+      error('this project declares "entries" and no project-wide "main", so there is no single'
+            .. ' entry point for "java:run": run one of ' .. table.concat(names, ", ")
+            .. ', or add a "main" to name the default', 0)
+    end
     error('a java toolchain needs "main" to run: a run target\'s entry point cannot be inferred'
           .. ' from "roots". A jar does NOT need one, and omitting it builds a library jar'
           .. ' with no Main-Class', 0)
@@ -432,15 +482,8 @@ daukle.task{
   name = "java:run",
   dependsOn = { "java:compile" },
   run = function(context)
-    local root, pick = provision_jdk(context)
     local config = config_of(context)
-    local entries = appended({ CLASSES },
-                             resource_directories(context, root, pick, config, { resource_root_of }))
-    appended(entries, classpath_of(context, config, "classpath"))
-    local argv = append_args({ "-cp", classpath_argument(context, entries) },
-                             config.runArgs, "runArgs")
-    argv[#argv + 1] = main_of(config)
-    daukle.exec(root:tool(executable(context.host.os, pick, "java")), argv)
+    run_class(context, main_of(config), nil)
   end,
 }
 
@@ -580,3 +623,37 @@ daukle.task{
     daukle.exec(root:tool(executable(context.host.os, pick, "jar")), argv)
   end,
 }
+
+--[[ A task per declared entry point, registered from the CHUNK because a daukle
+     task takes no arguments: N runnable classes need N registered tasks and a
+     fixed vocabulary cannot substitute. D-110 granted the chunk-time manifest
+     read this needs.
+
+     @implNote the ".toml" gate is not optional. Parsing daukle.manifest when it
+     is Lua is FATAL on every command rather than degraded, which is the crash
+     daukle/cmake@1.4.0 shipped. A project with a Lua manifest keeps java:run
+     and gains no entry tasks, because nothing a chunk can reach sees a
+     Lua-declared config. ]]
+local function declarative_manifest()
+  if string.match(daukle.manifest, "%.toml$") == nil then return nil end
+  return daukle.parse(daukle.read(daukle.manifest), daukle.manifest)
+end
+
+local function declared_entries()
+  local document = declarative_manifest()
+  if document == nil then return {} end
+  local toolchains = document.toolchains
+  local config = type(toolchains) == "table" and toolchains.java or nil
+  if type(config) ~= "table" then return {} end
+  return entry_points.declared(config, class_to_path)
+end
+
+for _, entry in ipairs(declared_entries()) do
+  daukle.task{
+    name = "java:run-" .. entry.name,
+    dependsOn = { "java:compile" },
+    run = function(context)
+      run_class(context, entry.main, entry.runArgs)
+    end,
+  }
+end
