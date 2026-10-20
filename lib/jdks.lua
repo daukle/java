@@ -71,38 +71,50 @@ local function known()
   return table.concat(versions, ", ")
 end
 
-local function for_host(request)
+--- Why this plugin cannot provide a JDK for the request, or nil when it can.
+---
+--- @implNote Exists because the plugin sandbox has no pcall, so a dependent
+--- plugin cannot ask `for_host` and survive the raise; it reports this reason
+--- instead of failing. `for_host` raises exactly this, so the two cannot drift.
+--- The two refusals differ: a version this plugin does not pin is answered by
+--- the list; a version it pins but not for this host is answered by nothing the
+--- user can change. An OLD version is almost always the wrong question:
+--- "release" targets old bytecode from a modern JDK, which is why there is no
+--- JDK 8 row and should not be.
+--- @return string|nil
+local function problem_for_host(request)
   local version = request.version
   local os_name = request.os
   local arch = request.arch
 
-  local release = RELEASES[version]
-  local digests = DIGESTS[version]
-  local key = os_name .. "/" .. arch
+  if RELEASES[version] == nil or DIGESTS[version] == nil then
+    return string.format('no pinned JDK for java "%s". This plugin pins %s.'
+                         .. ' To target an OLDER Java than the one it compiles with, set "release"'
+                         .. ' rather than asking for an old JDK: javac emits that bytecode itself',
+                         tostring(version), known())
+  end
+  if DIGESTS[version][os_name .. "/" .. arch] == nil then
+    return string.format('java %s is pinned, but Temurin publishes no %s %s build of it,'
+                         .. ' so there is nothing for this host to download',
+                         version, tostring(os_name), tostring(arch))
+  end
+  return nil
+end
 
-  --[[ The two failures are different and the message said the same thing for
-       both. A version this plugin does not pin is answered by the list; a
-       version it pins but not for this host is answered by nothing the user
-       can change, so saying so is the whole of the help. And an OLD version is
-       almost always the wrong question: "release" targets old bytecode from a
-       modern JDK, which is why there is no JDK 8 row and should not be. ]]
-  if release == nil or digests == nil then
-    error(string.format('no pinned JDK for java "%s". This plugin pins %s.'
-                        .. ' To target an OLDER Java than the one it compiles with, set "release"'
-                        .. ' rather than asking for an old JDK: javac emits that bytecode itself',
-                        tostring(version), known()), 0)
-  end
-  if digests[key] == nil then
-    error(string.format('java %s is pinned, but Temurin publishes no %s %s build of it,'
-                        .. ' so there is nothing for this host to download',
-                        version, tostring(os_name), tostring(arch)), 0)
-  end
+local function for_host(request)
+  local why = problem_for_host(request)
+  if why ~= nil then error(why, 0) end
+
+  local version = request.version
+  local os_name = request.os
+  local release = RELEASES[version]
+  local key = os_name .. "/" .. request.arch
 
   return {
-    url = asset_url(version, release, os_name, arch),
-    sha256 = digests[key],
+    url = asset_url(version, release, os_name, request.arch),
+    sha256 = DIGESTS[version][key],
     home = string.format(HOMES[os_name], release.full),
   }
 end
 
-return { for_host = for_host }
+return { for_host = for_host, problem_for_host = problem_for_host }
